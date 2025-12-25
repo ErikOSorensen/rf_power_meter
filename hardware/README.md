@@ -70,6 +70,47 @@ RJ45 Pin 6 (SCL) ────────┬──── TCA9548A SCL
 
 One PESD5V0L2BT-Q (dual diode) protects both SDA and SCL per connector. The ~1pF capacitance per line is negligible for 400kHz I2C (bus limit is 400pF).
 
+## I2C Pull-Up Resistors
+
+I2C is open-drain and requires pull-ups. The RP2040's internal pull-ups (~50-80kΩ) are too weak for reliable operation.
+
+**Main I2C bus (near Pico):**
+
+```
+3.3V ────┬───────┬────
+         │       │
+      [2.2kΩ] [2.2kΩ]
+         │       │
+        SDA     SCL ──── to TCA9548A, ADS1115s, OLEDs
+```
+
+**Muxed I2C channels (TCA9548A outputs to RJ45):**
+
+The TCA9548A passes signals through but provides no pull-ups. The Ethernet cable adds capacitance (~50-100pF/m). Pull-ups are needed on both ends:
+
+```
+Main Unit:                            Sensor Module:
+
+TCA9548A SD0/SC0 ──┬── RJ45 ══════════ RJ45 ──┬── EEPROM SDA/SCL
+                   │                          │
+                [10kΩ]                     [4.7kΩ]
+                   │                          │
+                  3.3V                       3.3V
+```
+
+- **Main unit (10kΩ):** Weaker pull-up keeps lines defined when no sensor is connected
+- **Sensor module (4.7kΩ):** Stronger pull-up handles cable capacitance
+- **Combined (10kΩ ∥ 4.7kΩ ≈ 3.2kΩ):** Adequate for cable length when connected
+
+**Pull-up summary:**
+
+| Location | Value | Quantity | Purpose |
+|----------|-------|----------|---------|
+| Main bus (SDA, SCL) | 2.2kΩ | 2 | Primary pull-up for on-board devices |
+| Mux CH0 output (SD0, SC0) | 10kΩ | 2 | Keep lines defined, sensor 1 |
+| Mux CH1 output (SD1, SC1) | 10kΩ | 2 | Keep lines defined, sensor 2 |
+| Sensor module (SDA, SCL) | 4.7kΩ | 2 per module | Handle cable capacitance |
+
 ## Presence Detect Conditioning
 
 The presence detect line (RJ45 pin 8) needs a pull-down resistor and ESD protection:
