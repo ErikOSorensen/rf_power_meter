@@ -115,19 +115,26 @@ Sensors connect to the main unit via standard Ethernet cables. This provides a c
 | Pin | Wire Color | Function | Notes |
 |-----|------------|----------|-------|
 | 1 | Orange/White | 3.3V | For EEPROM and 3.3V sensors |
-| 2 | Orange | GND | Power ground |
+| 2 | Orange | GND | Power ground (shared with 5V return) |
 | 3 | Green/White | I2C SDA | To TCA9548A mux |
 | 4 | Blue | Analog Output | To ADS1115 input |
 | 5 | Blue/White | Analog GND | ADC reference ground |
 | 6 | Green | I2C SCL | To TCA9548A mux |
 | 7 | Brown/White | 5V | For 5V sensors (AD8317, AD8318) |
-| 8 | Brown | GND | Additional ground for 5V return |
+| 8 | Brown | Presence Detect | Directly tied to 3.3V on sensor module |
 
 **Power Supply Notes:**
 - The EEPROM (AT24C02) always runs on 3.3V
 - 3.3V sensors (AD8307, LTC5582): Connect RF detector VCC to pin 1
 - 5V sensors (AD8317, AD8318): Connect RF detector VCC to pin 7
 - Main unit must provide both 3.3V and 5V rails
+
+**Hot-Swap Detection:**
+- Pin 8 is directly connected to 3.3V on each sensor module
+- Main unit has internal pull-down on presence detect GPIOs
+- When sensor is connected: GPIO reads HIGH (3.3V)
+- When sensor is disconnected: GPIO reads LOW (pulled down)
+- Rising/falling edge interrupts trigger sensor re-detection
 
 ### Main Unit I2C Bus
 
@@ -167,6 +174,8 @@ A single-ADC design would require sequential readings with mux switching, introd
 |----------|----------|-------|
 | I2C SDA | GP0 | I2C0 |
 | I2C SCL | GP1 | I2C0 |
+| Sensor 1 Detect | GP2 | Pull-down, IRQ on edge |
+| Sensor 2 Detect | GP3 | Pull-down, IRQ on edge |
 | W5500 SPI MISO | GP16 | SPI0 |
 | W5500 CS | GP17 | |
 | W5500 SPI SCK | GP18 | SPI0 |
@@ -183,14 +192,14 @@ Each sensor module contains an RF detector chip and an EEPROM. The EEPROM always
                     │         Sensor Module (3.3V)            │
    RJ45             │                                         │
   ┌─────┐           │  ┌─────────────┐      ┌─────────────┐  │
-  │1 3V3├───────────┼──┤ VCC         ├──────┤ VCC         │  │
-  │2 GND├───────────┼──┤         GND ├──────┤         GND │  │
-  │3 SDA├───────────┼──┤ SDA  EEPROM │      │ RF Detector │  │
-  │4 OUT│◄──────────┼──┤     AT24C02 │      │   AD8307    ├──┼── RF IN
-  │5 AGND├──────────┼──┤ SCL   0x50  │      │             │  │   (SMA)
-  │6 SCL├───────────┼──┤             │      │         OUT ├──┼─► Pin 4
-  │7 5V │           │  └─────────────┘      └─────────────┘  │
-  │8 GND│           │                                         │
+  │1 3V3├───┬───────┼──┤ VCC         ├──────┤ VCC         │  │
+  │2 GND├───┼───────┼──┤         GND ├──────┤         GND │  │
+  │3 SDA├───┼───────┼──┤ SDA  EEPROM │      │ RF Detector │  │
+  │4 OUT│◄──┼───────┼──┤     AT24C02 │      │   AD8307    ├──┼── RF IN
+  │5 AGND├──┼───────┼──┤ SCL   0x50  │      │             │  │   (SMA)
+  │6 SCL├───┼───────┼──┤             │      │         OUT ├──┼─► Pin 4
+  │7 5V │   │       │  └─────────────┘      └─────────────┘  │
+  │8 DET├───┘       │           (directly tied to 3.3V)      │
   └─────┘           └─────────────────────────────────────────┘
 ```
 
@@ -200,15 +209,15 @@ Each sensor module contains an RF detector chip and an EEPROM. The EEPROM always
                     │          Sensor Module (5V)             │
    RJ45             │                                         │
   ┌─────┐           │  ┌─────────────┐      ┌─────────────┐  │
-  │1 3V3├───────────┼──┤ VCC         │      │         VCC ├──┼─── Pin 7 (5V)
-  │2 GND├───────────┼──┤         GND ├──────┤         GND │  │
-  │3 SDA├───────────┼──┤ SDA  EEPROM │      │ RF Detector │  │
-  │4 OUT│◄──────────┼──┤     AT24C02 │      │   AD8318    ├──┼── RF IN
-  │5 AGND├──────────┼──┤ SCL   0x50  │      │             │  │   (SMA)
-  │6 SCL├───────────┼──┤             │      │         OUT ├──┼─► Pin 4
-  │7 5V ├───────────┼──┼─────────────┼──────┤             │  │
-  │8 GND├───────────┼──┼─────────────┼──────┴─────────────┘  │
-  └─────┘           │  └─────────────┘                        │
+  │1 3V3├───┬───────┼──┤ VCC         │      │         VCC ├──┼─── Pin 7 (5V)
+  │2 GND├───┼───────┼──┤         GND ├──────┤         GND │  │
+  │3 SDA├───┼───────┼──┤ SDA  EEPROM │      │ RF Detector │  │
+  │4 OUT│◄──┼───────┼──┤     AT24C02 │      │   AD8318    ├──┼── RF IN
+  │5 AGND├──┼───────┼──┤ SCL   0x50  │      │             │  │   (SMA)
+  │6 SCL├───┼───────┼──┤             │      │         OUT ├──┼─► Pin 4
+  │7 5V ├───┼───────┼──┼─────────────┼──────┤             │  │
+  │8 DET├───┘       │  └─────────────┘      └─────────────┘  │
+  └─────┘           │           (directly tied to 3.3V)      │
                     └─────────────────────────────────────────┘
 ```
 
@@ -241,7 +250,9 @@ The main unit requires both 3.3V (from Pico) and 5V (external) power supplies.
             │   │                 │
      ┌──────┼───┤ GP0 (I2C0 SDA)  │
      │    ┌─┼───┤ GP1 (I2C0 SCL)  │
-     │    │ │   │                 │
+     │    │ │   │ GP2 (DET1)      ├◄───────────────────────────── Sensor 1 Detect
+     │    │ │   │ GP3 (DET2)      ├◄───────────────────────────── Sensor 2 Detect
+     │    │ │   │                 │               (internal pull-down, IRQ on edge)
      │    │ │   │ GP16 (SPI MISO) ├────────┐
      │    │ │   │ GP17 (SPI CS)   ├───────┐│
      │    │ │   │ GP18 (SPI SCK)  ├──────┐││
@@ -308,7 +319,7 @@ The main unit requires both 3.3V (from Pico) and 5V (external) power supplies.
    AGND ────────┼─►│5: AGND│         │5: AGND│◄───────┼─── AGND
    I2C SCL ─────┼─►│6: SCL │         │6: SCL │◄───────┼─── (via TCA9548A)
    5V ──────────┼─►│7: 5V  │         │7: 5V  │◄───────┼─── 5V
-   GND ─────────┼─►│8: GND │         │8: GND │◄───────┼─── GND
+   GP2 (DET1) ──┼──│8: DET │         │8: DET │────────┼─── GP3 (DET2)
                 │  └───────┘         └───────┘        │
                 └─────────────────────────────────────┘
 ```

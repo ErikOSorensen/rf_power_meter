@@ -2,6 +2,7 @@
 # Handles ADC reading, averaging, and power calculation
 
 import uasyncio as asyncio
+from machine import Pin
 from .ads1115 import ADS1115, PGA_4_096V
 from .calibration import CalibrationManager
 import config
@@ -204,6 +205,85 @@ class PowerMeter:
         # Measurement state
         self.running = False
         self._task = None
+
+        # Hot-swap detection state (pending re-detection flags)
+        self._detect_pending = {1: False, 2: False}
+
+        # Initialize presence detect pins with pull-down and IRQ
+        self._detect_pins = {}
+        self._setup_presence_detect()
+
+    def _setup_presence_detect(self):
+        """Set up GPIO pins for sensor presence detection."""
+        pin_map = {
+            1: config.DETECT_PIN_CH1,
+            2: config.DETECT_PIN_CH2,
+        }
+
+        for channel, pin_num in pin_map.items():
+            pin = Pin(pin_num, Pin.IN, Pin.PULL_DOWN)
+            self._detect_pins[channel] = pin
+
+            # Create closure to capture channel number
+            def make_handler(ch):
+                def handler(p):
+                    self._on_presence_change(ch, p.value())
+                return handler
+
+            pin.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING,
+                    handler=make_handler(channel))
+
+    def _on_presence_change(self, channel, present):
+        """
+        Handle sensor presence change (called from IRQ context).
+
+        Args:
+            channel: Channel number (1 or 2)
+            present: True if sensor connected, False if disconnected
+        """
+        # Set flag for main loop to handle (avoid I2C in IRQ context)
+        self._detect_pending[channel] = True
+
+    def check_presence_changes(self):
+        """
+        Check for pending presence changes and re-detect sensors.
+
+        Call this periodically from the main loop.
+
+        Returns:
+            Dict of channels that changed: {channel: sensor_type or None}
+        """
+        changes = {}
+
+        for channel in [1, 2]:
+            if self._detect_pending[channel]:
+                self._detect_pending[channel] = False
+
+                # Check current presence state
+                present = self._detect_pins[channel].value()
+
+                if present:
+                    # Sensor connected - detect and load calibration
+                    sensor_type = self.cal_mgr.detect_sensor(channel)
+                    self.channels[channel].clear_averaging()
+                    changes[channel] = sensor_type
+                    print("Sensor {} connected: {}".format(
+                        channel, sensor_type or "unknown"))
+                else:
+                    # Sensor disconnected - clear calibration data
+                    self.cal_mgr.sensors[channel] = None
+                    self.channels[channel].clear_averaging()
+                    self.channels[channel].power_dbm = None
+                    changes[channel] = None
+                    print("Sensor {} disconnected".format(channel))
+
+        return changes
+
+    def is_sensor_present(self, channel):
+        """Check if sensor is physically present on channel."""
+        if channel in self._detect_pins:
+            return bool(self._detect_pins[channel].value())
+        return False
 
     def detect_sensors(self):
         """

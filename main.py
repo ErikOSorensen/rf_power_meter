@@ -102,6 +102,9 @@ class RFPowerMeter:
 
         while self.running:
             try:
+                # Check for hot-swap events (sensor connect/disconnect)
+                self.meter.check_presence_changes()
+
                 for channel in self.meter.channels.values():
                     channel.read_power()
 

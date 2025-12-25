@@ -17,6 +17,10 @@ I2C_SDA = const(0)
 I2C_SCL = const(1)
 I2C_FREQ = const(400000)
 
+# === Sensor Presence Detect Pins ===
+DETECT_PIN_CH1 = const(2)  # GP2 - Sensor 1 presence detect
+DETECT_PIN_CH2 = const(3)  # GP3 - Sensor 2 presence detect
+
 # === I2C Addresses ===
 ADS1115_ADDR_CH1 = const(0x48)  # ADDR pin to GND
 ADS1115_ADDR_CH2 = const(0x49)  # ADDR pin to VDD
