@@ -138,3 +138,30 @@ TVS diodes per RJ45 connector (place close to connector):
 | Presence Detect | 8 | 1× PESD5V0L2BT-Q | One diode unused |
 
 Total: 6× PESD5V0L2BT-Q for both RJ45 connectors (or 5× if presence detect lines share one package).
+
+## Sensor Module ESD Protection
+
+The sensor module's RJ45 is also exposed when disconnected, and the module is handled frequently. Add TVS protection for the EEPROM I2C lines:
+
+```
+        Sensor Module
+
+RJ45 Pin 3 (SDA) ────┬────[4.7kΩ]──┬── EEPROM SDA
+                     ┴             │
+                    ───           3.3V
+                     │        (pull-up)
+                    GND
+                    TVS
+
+RJ45 Pin 6 (SCL) ────┬────[4.7kΩ]──┬── EEPROM SCL
+                     ┴             │
+                    ───           3.3V
+                     │
+                    GND
+```
+
+- **Part:** 1× PESD5V0L2BT-Q per sensor module (protects both SDA and SCL)
+- **Placement:** Close to RJ45 connector
+- **Cost:** ~$0.10 per module
+
+The RF detector output typically has internal ESD protection and doesn't require external TVS on the sensor module (the main unit protects this line).
