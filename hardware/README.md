@@ -146,18 +146,25 @@ The sensor module's RJ45 is also exposed when disconnected, and the module is ha
 ```
         Sensor Module
 
-RJ45 Pin 3 (SDA) ────┬────[4.7kΩ]──┬── EEPROM SDA
-                     ┴             │
-                    ───           3.3V
-                     │        (pull-up)
-                    GND
-                    TVS
+                 3.3V
+                  │
+               [4.7kΩ]
+                  │
+RJ45 Pin 3 ──────┴──────── EEPROM SDA
+  (SDA)           │
+                 ───
+                  ┴  TVS
+                 GND
 
-RJ45 Pin 6 (SCL) ────┬────[4.7kΩ]──┬── EEPROM SCL
-                     ┴             │
-                    ───           3.3V
-                     │
-                    GND
+                 3.3V
+                  │
+               [4.7kΩ]
+                  │
+RJ45 Pin 6 ──────┴──────── EEPROM SCL
+  (SCL)           │
+                 ───
+                  ┴  TVS (same package)
+                 GND
 ```
 
 - **Part:** 1× PESD5V0L2BT-Q per sensor module (protects both SDA and SCL)
