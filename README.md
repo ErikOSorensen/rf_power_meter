@@ -147,6 +147,20 @@ All I2C devices share a single bus:
 
 All sensor EEPROMs use address 0x50. The multiplexer isolates them so only one is active at a time.
 
+**Why Two ADS1115 ADCs?**
+
+Each ADS1115 supports 4 single-ended or 2 differential inputs, so a single chip could theoretically handle both channels. However, this design uses one ADC per channel for the following reasons:
+
+1. **Simultaneous sampling**: Both channels can be read at the exact same time with no phase skew or multiplexing delays. This matters when comparing signals between ports or measuring relative power.
+
+2. **Differential measurement**: Each channel uses differential inputs (AIN0-AIN1) with a dedicated analog ground reference per sensor. This provides better noise rejection than single-ended measurements over the Ethernet cable.
+
+3. **Simplicity**: No ADC channel switching logic is needed. Each `PowerChannel` object owns its ADC, making the software straightforward.
+
+4. **Minimal cost impact**: ADS1115 chips are inexpensive (~$1-2), so the added hardware cost is negligible compared to the software complexity savings.
+
+A single-ADC design would require sequential readings with mux switching, introducing timing artifacts when comparing channels.
+
 ### Pico Pin Assignments
 
 | Function | Pico Pin | Notes |
