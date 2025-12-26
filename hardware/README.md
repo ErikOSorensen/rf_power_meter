@@ -111,6 +111,17 @@ TCA9548A SD0/SC0 ──┬── RJ45 ══════════ RJ45 ──
 | Mux CH1 output (SD1, SC1) | 10kΩ | 2 | Keep lines defined, sensor 2 |
 | Sensor module (SDA, SCL) | 4.7kΩ | 2 per module | Handle cable capacitance |
 
+## ADS1115 ADC Configuration
+
+**ADDR pin (I2C address selection):**
+
+| ADC | Address | ADDR Pin |
+|-----|---------|----------|
+| ADS1115 #1 (Channel 1) | 0x48 | GND |
+| ADS1115 #2 (Channel 2) | 0x49 | 3.3V |
+
+The ADDR pin must be tied directly to GND or VDD - do not leave floating.
+
 ## TCA9548A I2C Multiplexer Configuration
 
 **Address pins (A0, A1, A2):**
