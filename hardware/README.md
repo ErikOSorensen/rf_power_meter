@@ -111,6 +111,41 @@ TCA9548A SD0/SC0 ──┬── RJ45 ══════════ RJ45 ──
 | Mux CH1 output (SD1, SC1) | 10kΩ | 2 | Keep lines defined, sensor 2 |
 | Sensor module (SDA, SCL) | 4.7kΩ | 2 per module | Handle cable capacitance |
 
+## TCA9548A I2C Multiplexer Configuration
+
+**Address pins (A0, A1, A2):**
+
+All tied to GND for address 0x70:
+
+| Pin | Connection |
+|-----|------------|
+| A0 | GND |
+| A1 | GND |
+| A2 | GND |
+
+**RESET pin:**
+
+Connect to GP4 with a pull-up for optional software reset capability:
+
+```
+3.3V
+ │
+[10kΩ]
+ │
+ ├──── TCA9548A RESET
+ │
+GP4
+```
+
+- Normal operation: GP4 as input (high-Z), RESET held high by pull-up
+- Bus recovery: Pull GP4 low to reset mux, clears all channel selections
+
+This allows recovery if the I2C bus gets stuck.
+
+**Unused channels (2-7):**
+
+Leave SDA2-7 and SCL2-7 unconnected. Do NOT tie to ground - if accidentally selected, this would short the I2C bus.
+
 ## Presence Detect Conditioning
 
 The presence detect line (RJ45 pin 8) needs a pull-down resistor and ESD protection:
