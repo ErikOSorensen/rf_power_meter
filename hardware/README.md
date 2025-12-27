@@ -122,6 +122,22 @@ TCA9548A SD0/SC0 ──┬── RJ45 ══════════ RJ45 ──
 
 The ADDR pin must be tied directly to GND or VDD - do not leave floating.
 
+**ALERT/RDY pin:**
+
+The ALERT/RDY pin can signal conversion complete (avoids polling) or comparator alerts. The current software polls the config register, so this pin is unused.
+
+Add a pull-up to keep the open-drain output in a defined state:
+
+```
+3.3V
+ │
+[10kΩ]
+ │
+ADS1115 ALERT/RDY
+```
+
+Do this for both ADS1115 chips. No GPIO connection is needed for the current software.
+
 ## TCA9548A I2C Multiplexer Configuration
 
 **Address pins (A0, A1, A2):**
