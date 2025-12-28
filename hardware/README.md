@@ -38,10 +38,10 @@ RJ45 Pin 5 (AGND)────────┼────[100Ω]───┬─�
 ```
 
 **TVS Diodes (ESD Protection):**
-- Part: PESD5V0L2BT-Q (Nexperia, SOT-23, dual diode)
-- Standoff voltage: 5V (safe for 0-3.3V sensor signals)
-- Clamping voltage: ~12V @ 8kV ESD
-- Capacitance: ~1pF (negligible signal impact)
+- Part: ESDAVLC6-2BLY (ST, SOT-23-6L, dual line)
+- Standoff voltage: 6V (safe for 0-3.3V sensor signals)
+- Clamping voltage: ~8V typical
+- Capacitance: ~0.45pF per line (very low, negligible signal impact)
 - Place close to RJ45 connector to catch ESD before it reaches the PCB
 
 **RC Low-Pass Filter:**
@@ -57,7 +57,7 @@ The I2C lines (SDA, SCL - RJ45 pins 3 and 6) are exposed to ESD during cable ins
 ```
 RJ45 Pin 3 (SDA) ────────┬──── TCA9548A SDA
                          ┴
-                        ───  TVS (PESD5V0L2BT-Q)
+                        ───  TVS (ESDAVLC6-2BLY)
                          │
                         GND
 
@@ -68,7 +68,7 @@ RJ45 Pin 6 (SCL) ────────┬──── TCA9548A SCL
                         GND
 ```
 
-One PESD5V0L2BT-Q (dual diode) protects both SDA and SCL per connector. The ~1pF capacitance per line is negligible for 400kHz I2C (bus limit is 400pF).
+One ESDAVLC6-2BLY (dual line) protects both SDA and SCL per connector. The ~0.45pF capacitance per line is negligible for 400kHz I2C (bus limit is 400pF).
 
 ## I2C Pull-Up Resistors
 
@@ -111,6 +111,68 @@ TCA9548A SD0/SC0 ──┬── RJ45 ══════════ RJ45 ──
 | Mux CH1 output (SD1, SC1) | 10kΩ | 2 | Keep lines defined, sensor 2 |
 | Sensor module (SDA, SCL) | 4.7kΩ | 2 per module | Handle cable capacitance |
 
+## ADS1115 ADC Configuration
+
+**ADDR pin (I2C address selection):**
+
+| ADC | Address | ADDR Pin |
+|-----|---------|----------|
+| ADS1115 #1 (Channel 1) | 0x48 | GND |
+| ADS1115 #2 (Channel 2) | 0x49 | 3.3V |
+
+The ADDR pin must be tied directly to GND or VDD - do not leave floating.
+
+**ALERT/RDY pin:**
+
+The ALERT/RDY pin can signal conversion complete (avoids polling) or comparator alerts. The current software polls the config register, so this pin is unused.
+
+Add a pull-up to keep the open-drain output in a defined state:
+
+```
+3.3V
+ │
+[10kΩ]
+ │
+ADS1115 ALERT/RDY
+```
+
+Do this for both ADS1115 chips. No GPIO connection is needed for the current software.
+
+## TCA9548A I2C Multiplexer Configuration
+
+**Address pins (A0, A1, A2):**
+
+All tied to GND for address 0x70:
+
+| Pin | Connection |
+|-----|------------|
+| A0 | GND |
+| A1 | GND |
+| A2 | GND |
+
+**RESET pin:**
+
+Connect to GP4 with a pull-up for optional software reset capability:
+
+```
+3.3V
+ │
+[10kΩ]
+ │
+ ├──── TCA9548A RESET
+ │
+GP4
+```
+
+- Normal operation: GP4 as input (high-Z), RESET held high by pull-up
+- Bus recovery: Pull GP4 low to reset mux, clears all channel selections
+
+This allows recovery if the I2C bus gets stuck.
+
+**Unused channels (2-7):**
+
+Leave SDA2-7 and SCL2-7 unconnected. Do NOT tie to ground - if accidentally selected, this would short the I2C bus.
+
 ## Presence Detect Conditioning
 
 The presence detect line (RJ45 pin 8) needs a pull-down resistor and ESD protection:
@@ -125,7 +187,7 @@ RJ45 Pin 8 (DET) ────────┬────────┬───
 ```
 
 - **Pull-down (10kΩ):** The RP2040's internal pull-down (~50kΩ) is weak. An external 10kΩ provides better noise immunity when the sensor is disconnected, especially with long cables in an RF environment.
-- **TVS:** One PESD5V0L2BT-Q per connector (one diode unused, or share between both RJ45 presence detect lines).
+- **TVS:** One ESDAVLC6-2BLY per connector (one line unused, or share between both RJ45 presence detect lines).
 
 ## ESD Protection Summary
 
@@ -133,8 +195,42 @@ TVS diodes per RJ45 connector (place close to connector):
 
 | Signals | RJ45 Pins | TVS Package | Notes |
 |---------|-----------|-------------|-------|
-| Analog OUT + AGND | 4, 5 | 1× PESD5V0L2BT-Q | Before RC filter |
-| I2C SDA + SCL | 3, 6 | 1× PESD5V0L2BT-Q | ~1pF OK for 400kHz |
-| Presence Detect | 8 | 1× PESD5V0L2BT-Q | One diode unused |
+| Analog OUT + AGND | 4, 5 | 1× ESDAVLC6-2BLY | Before RC filter |
+| I2C SDA + SCL | 3, 6 | 1× ESDAVLC6-2BLY | ~0.45pF OK for 400kHz |
+| Presence Detect | 8 | 1× ESDAVLC6-2BLY | One line unused |
 
-Total: 6× PESD5V0L2BT-Q for both RJ45 connectors (or 5× if presence detect lines share one package).
+Total: 6× ESDAVLC6-2BLY for both RJ45 connectors (or 5× if presence detect lines share one package).
+
+## Sensor Module ESD Protection
+
+The sensor module's RJ45 is also exposed when disconnected, and the module is handled frequently. Add TVS protection for the EEPROM I2C lines:
+
+```
+        Sensor Module
+
+                 3.3V
+                  │
+               [4.7kΩ]
+                  │
+RJ45 Pin 3 ──────┴──────── EEPROM SDA
+  (SDA)           │
+                 ───
+                  ┴  TVS
+                 GND
+
+                 3.3V
+                  │
+               [4.7kΩ]
+                  │
+RJ45 Pin 6 ──────┴──────── EEPROM SCL
+  (SCL)           │
+                 ───
+                  ┴  TVS (same package)
+                 GND
+```
+
+- **Part:** 1× ESDAVLC6-2BLY per sensor module (protects both SDA and SCL)
+- **Placement:** Close to RJ45 connector
+- **Cost:** ~$0.10 per module
+
+The RF detector output typically has internal ESD protection and doesn't require external TVS on the sensor module (the main unit protects this line).

@@ -21,6 +21,9 @@ I2C_FREQ = const(400000)
 DETECT_PIN_CH1 = const(2)  # GP2 - Sensor 1 presence detect
 DETECT_PIN_CH2 = const(3)  # GP3 - Sensor 2 presence detect
 
+# === I2C Multiplexer Reset Pin ===
+MUX_RESET_PIN = const(4)   # GP4 - TCA9548A reset (active low, optional)
+
 # === I2C Addresses ===
 ADS1115_ADDR_CH1 = const(0x48)  # ADDR pin to GND
 ADS1115_ADDR_CH2 = const(0x49)  # ADDR pin to VDD

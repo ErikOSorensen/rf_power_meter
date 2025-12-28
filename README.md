@@ -176,6 +176,7 @@ A single-ADC design would require sequential readings with mux switching, introd
 | I2C SCL | GP1 | I2C0 |
 | Sensor 1 Detect | GP2 | Pull-down, IRQ on edge |
 | Sensor 2 Detect | GP3 | Pull-down, IRQ on edge |
+| TCA9548A Reset | GP4 | Active low, external pull-up |
 | W5500 SPI MISO | GP16 | SPI0 |
 | W5500 CS | GP17 | |
 | W5500 SPI SCK | GP18 | SPI0 |
@@ -227,6 +228,8 @@ Each sensor module contains an RF detector chip and an EEPROM. The EEPROM always
 - RJ45 jack
 - SMA connector for RF input
 - Decoupling capacitors (100nF on each power rail)
+- I2C pull-up resistors (2× 4.7kΩ)
+- ESD protection (1× ESDAVLC6-2BLY for I2C lines)
 - RF detector support components (per datasheet)
 
 **Sensor Supply Voltage Reference:**
@@ -252,7 +255,8 @@ The main unit requires both 3.3V (from Pico) and 5V (external) power supplies.
      │    ┌─┼───┤ GP1 (I2C0 SCL)  │
      │    │ │   │ GP2 (DET1)      ├◄───────────────────────────── Sensor 1 Detect
      │    │ │   │ GP3 (DET2)      ├◄───────────────────────────── Sensor 2 Detect
-     │    │ │   │                 │               (internal pull-down, IRQ on edge)
+     │    │ │   │ GP4 (MUX RST)   ├───────────────────┐
+     │    │ │   │                 │                   │  TCA9548A RESET
      │    │ │   │ GP16 (SPI MISO) ├────────┐
      │    │ │   │ GP17 (SPI CS)   ├───────┐│
      │    │ │   │ GP18 (SPI SCK)  ├──────┐││
@@ -283,7 +287,7 @@ The main unit requires both 3.3V (from Pico) and 5V (external) power supplies.
      │    │ │   └───────────────────────────────────┐   │   │   │   │
      │    │ │                                       │   │   │   │   │
      │    │ │   ┌────────────────────┐              │   │   │   │   │
-     │    │ │   │  TCA9548A (0x70)   │              │   │   │   │   │
+     │    │ │   │  TCA9548A (0x70)   │◄─────────────┼───┼───┼───┼───┼── GP4 (RST)
      │    │ ├───┤ SDA            SD0 ├──► Sensor 1  │   │   │   │   │
      ├────┼─┼───┤ SCL            SC0 ├──► EEPROM    │   │   │   │   │
      │    │ │   │                SD1 ├──► Sensor 2  │   │   │   │   │
