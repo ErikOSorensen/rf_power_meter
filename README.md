@@ -229,7 +229,7 @@ Each sensor module contains an RF detector chip and an EEPROM. The EEPROM always
 - SMA connector for RF input
 - Decoupling capacitors (100nF on each power rail)
 - I2C pull-up resistors (2× 4.7kΩ)
-- ESD protection (1× PESD5V0L2BT-Q for I2C lines)
+- ESD protection (1× ESDAVLC6-2BLY for I2C lines)
 - RF detector support components (per datasheet)
 
 **Sensor Supply Voltage Reference:**
