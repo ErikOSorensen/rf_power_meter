@@ -407,10 +407,12 @@ The main unit runs from a 12V, 1A AC/DC adapter. Three regulators:
   only; the other channel and the main unit keep running. Hot-plugging a
   head charges its 10µF input capacitor; the polyfuse handles that
   transient without tripping.
-- **5V regulator:** the Pico accepts 1.8-5.5V on VSYS. A 1A buck module
-  in the 78xx footprint (Recom R-78B5.0-1.0, Traco TSR 1-2450, Murata
-  OKI-78SR-5/1.5) makes 5V from 12V; a linear regulator would burn
-  almost 3W here. The load is the EVB-Pico (RP2040 + W5500, ~200mA) plus
+- **5V regulator:** the Pico accepts 1.8-5.5V on VSYS. A Recom
+  R-78C5.0-1.0 (1A buck module, SIP-3, 78xx pinout, 8-42V input) makes
+  5V from 12V; a linear regulator would burn almost 3W here. Traco
+  TSR 1-2450 or Recom R-78B5.0-1.0 drop into the same footprint. Put
+  the input and output capacitors from the R-78C datasheet right at the
+  module pins; the 100µF at the jack does not replace them. The load is the EVB-Pico (RP2040 + W5500, ~200mA) plus
   the OLED path, ~0.4A worst case. Buck noise does not reach the heads:
   they are fed from the LM317 and have their own LDOs. If the Pico may
   be on USB while the 12V supply is on, feed VSYS through a Schottky as
@@ -549,12 +551,35 @@ GND              ───────────► GND
 
 ## Rotary Encoder and Debouncing
 
-A 24-detent rotary encoder with push switch (Bourns PEC11R-4215F-S0024
-or Alps EC11E) on the front panel sets frequency and external
-attenuator. All three contacts are debounced in hardware: an RC filter
+A rotary encoder with push switch on the front panel sets frequency
+and external attenuator. All three contacts are debounced in hardware: an RC filter
 followed by a 74HC14 Schmitt inverter, so the Pico only ever sees one
 clean edge per contact change and the firmware uses plain edge
 interrupts with no debounce timers.
+
+**Part: Bourns PEC16-2215F-S0024.** 16 mm encoder, 24 detents, 24
+pulses per revolution, push switch, 15 mm insulated flatted shaft (6 mm
+diameter). Terminal code 2 is "PC pin vertical / down facing": the
+pins go straight down into the board and the shaft runs parallel to it,
+pointing forward through the front panel. An M9 × 0.75 threaded bushing
+with the supplied nut and washer fastens the encoder to the panel, so
+the panel takes the turning and push forces instead of the solder
+joints.
+
+- **Board position:** solder it at the front edge of the main board,
+  shaft forward. The shaft centre sits 12.5 mm above the board surface;
+  set the panel hole height from that.
+- **Panel cutout:** Ø9.3 mm for the bushing plus a Ø3.3 mm hole for the
+  anti-rotation tab, 9.0 mm from the bushing centre (Bourns "Panel Hole
+  Detail"). The 15 mm shaft has a 5 mm bushing, which leaves room for
+  the 2 mm nut on a panel up to about 2.5 mm thick.
+- **Pulses vs detents:** 24 pulses on 24 detents is one full quadrature
+  cycle per click, which is what `config.ENCODER_STEPS_PER_DETENT = 4`
+  assumes. A 12-pulse/24-detent part would need it set to 2.
+- **Why not PEC11R or PEC12R:** the side-facing PEC11R-1/2 versions with a
+  bushing are not stocked at 24 pulses, and the side-facing PEC12R-2 has
+  no bushing at all. The shaft-up PEC11R-4xxx would need its own board
+  behind the panel.
 
 ```
                  R1              R2
@@ -572,14 +597,20 @@ interrupts with no debounce timers.
 |--------|-------------|--------|--------|------|
 | A | A | 10kΩ + 10kΩ + 10nF | 1A → 1Y | GP6 |
 | B | B | 10kΩ + 10kΩ + 10nF | 2A → 2Y | GP7 |
-| Switch | S1 | 10kΩ + 10kΩ + 10nF | 3A → 3Y | GP8 |
-| Common | C, S2 | GND | | |
+| Switch | D | 10kΩ + 10kΩ + 10nF | 3A → 3Y | GP8 |
+| Common | C, E | GND | | |
 
 - **RC values:** R1 pulls the contact up, R2 and C form the filter, time
-  constant 100µs. This is the Bourns-recommended network: it swallows
-  contact bounce of a few hundred microseconds and still passes the
-  fastest realistic spin (a 24-detent encoder turned at 5 turns per
-  second gives 2ms per detent, 500µs per quadrature transition).
+  constant 100µs. This is the network Bourns recommends for its PEC11R
+  and PEC12R encoders: it swallows contact bounce of a few hundred
+  microseconds and still passes the fastest realistic spin (a 24-detent
+  encoder turned at 5 turns per second gives 2ms per detent, 500µs per
+  quadrature transition). The PEC16 datasheet allows up to 5ms of
+  bounce at 15 RPM, which this filter does not fully swallow. On A and
+  B that is harmless: a bounce on one channel only toggles between two
+  adjacent quadrature states, so the decoder counts +1, -1 and nets
+  zero. If the switch ever registers double presses, raise its
+  capacitor to 100nF (1ms).
 - **74HC14:** runs from 3V3 with a 100nF decoupling capacitor. Its
   hysteresis (~0.9V at 3.3V) turns the slow RC ramp into a single sharp
   transition, so there are no double interrupts. Tie the three unused
@@ -589,11 +620,10 @@ interrupts with no debounce timers.
   together) and the switch polarity is set by
   `config.ENCODER_SW_ACTIVE_HIGH = True`. If clockwise turns the wrong
   way, set `config.ENCODER_REVERSE` rather than swapping wires.
-- **Placement:** put the resistors, capacitors and the 74HC14 on the main
-  board next to the Pico, not at the encoder. The panel wiring then
-  carries only raw contacts to ground, and the 74HC14 doubles as an ESD
-  buffer for those leads. Keep the wiring under ~20cm; longer runs are
-  fine too since the signals are DC until the RC.
+- **Placement:** the encoder and its RC filters and 74HC14 are all on
+  the main board, so there is no panel wiring. Keep the filter close to
+  the encoder pins; the 74HC14 also buffers the Pico from ESD that a
+  hand on the knob couples into the contacts.
 - **Pico side:** the RP2040 pads have their own Schmitt input stage, so
   the RC filter alone would usually work. The 74HC14 is cheap insurance
   for a panel control that gets handled constantly.
@@ -666,10 +696,11 @@ have not yet been updated:
   10kΩ pull-ups, pins 5, 6 and 7 become GND, presence detect on pin 8
   goes to GP4/GP5. Presence detect pull-downs R10/R11 become pull-ups to
   3V3. New: a header for the SSD1322 module on SPI1 (GP10, GP11,
-  GP13-GP15), the encoder header with its RC filters and 74HC14 (GP6-GP8),
+  GP13-GP15), the PEC16-2215F-S0024 encoder at the board front edge with its RC
+  filters and 74HC14 (GP6-GP8),
   and a SOT-223 3.3V LDO for the display from the 5V rail. The 12V
   input (jack, 100µF, 15V TVS), the LM317M 8V head rail, the 5V buck
-  module and the Pico are not drawn yet.
+  module (R-78C5.0-1.0) and the Pico are not drawn yet.
 - `sensor_heads/AD8307`: needs the ADS1115, the MCP9808, the 100nF
   output filter capacitor and the ALERT pull-up added; the detector
   output goes to AIN0 instead of RJ45 pin 4. C3/C4 (input coupling)

@@ -402,7 +402,7 @@ analog chain moved to the heads, the main unit is purely digital.
   needs no heatsink
 - The 8V rail goes to each RJ45 pin 1 through a resettable fuse (~200mA
   hold) and a 12V TVS, so a shorted cable or head only drops that port
-- A 1A 5V buck module (R-78B5.0-1.0 or TSR 1-2450 class) feeds Pico VSYS
+- A 1A 5V buck module (Recom R-78C5.0-1.0, 78xx pinout) feeds Pico VSYS
 - On the W5500-EVB-Pico the W5500 shares the module's 3.3V regulator
   with the RP2040, so it is covered by the 5V feed to VSYS
 - A separate 3.3V LDO (SOT-223, e.g. AP7361C-33 or AMS1117-3.3) from the
