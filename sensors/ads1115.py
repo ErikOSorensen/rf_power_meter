@@ -114,8 +114,7 @@ class ADS1115:
         Returns:
             Signed 16-bit ADC value
         """
-        config = (_OS_SINGLE | mux | self.gain |
-                  _MODE_SINGLE | self.rate | _COMP_DISABLE)
+        config = _OS_SINGLE | self._config_word(mux, _MODE_SINGLE)
         self._write_register(_REG_CONFIG, config)
 
         # Wait for conversion
@@ -129,6 +128,38 @@ class ADS1115:
             time.sleep_ms(1)
 
         return self._read_register(_REG_CONVERSION)
+
+    def _config_word(self, mux, mode):
+        """Build a config register value for the given input and mode."""
+        return mux | self.gain | mode | self.rate | _COMP_DISABLE
+
+    def start_continuous(self, mux=_MUX_DIFF_0_1):
+        """
+        Put the ADC in continuous-conversion mode on one input.
+
+        The device then converts at self.rate on its own and
+        read_conversion() returns the latest result without any waiting.
+        The ADS1115 powers up in single-shot mode, so this must be called
+        again whenever the device is (re)powered, e.g. after a sensor head
+        is plugged in.
+
+        Args:
+            mux: Input multiplexer setting (default AIN0 - AIN1)
+        """
+        self._write_register(_REG_CONFIG, self._config_word(mux, _MODE_CONTINUOUS))
+
+    def is_continuous(self):
+        """Return True if the device is currently in continuous mode."""
+        cfg = self._read_register(_REG_CONFIG) & 0xFFFF
+        return (cfg & _MODE_SINGLE) == 0
+
+    def read_conversion(self):
+        """
+        Read the most recent conversion result (volts) without starting one.
+
+        Intended for continuous mode; see start_continuous().
+        """
+        return self._raw_to_voltage(self._read_register(_REG_CONVERSION))
 
     def read_diff_0_1(self):
         """Read differential voltage between AIN0 and AIN1 (power sensor)."""
@@ -160,7 +191,7 @@ class ADS1115:
         return raw * voltage_range / 32767.0
 
     def read_power_voltage(self):
-        """Read power sensor voltage (differential A0-A1)."""
+        """Read power sensor voltage (differential A0-A1), single-shot."""
         return self.read_diff_0_1()
 
     def read_id_voltage(self):

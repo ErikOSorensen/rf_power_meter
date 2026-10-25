@@ -39,6 +39,7 @@ class SCPICommandHandler:
         p.register("MEASure:POWer:UNIT", self._cmd_unit, self._query_unit)
         p.register("MEASure:POWer:AVERage", self._cmd_average, self._query_average)
         p.register("MEASure:VOLTage", self._cmd_measure, self._query_voltage)
+        p.register("MEASure:TEMPerature", self._query_temperature, self._query_temperature)
 
         # Frequency Commands
         p.register("SENSe:FREQuency", self._cmd_frequency, self._query_frequency)
@@ -149,6 +150,25 @@ class SCPICommandHandler:
             return None
 
         return "{:.6f}".format(channel.power_voltage)
+
+    def _query_temperature(self, cmd):
+        """MEASure:TEMPerature? - Query sensor head temperature in C."""
+        ch = self._get_channel(cmd)
+        channel = self.meter.get_channel(ch)
+
+        if channel is None:
+            self.parser.add_error(-200, "Invalid channel")
+            return None
+
+        if channel.sensor_type is None:
+            self.parser.add_error(-230, "No sensor detected")
+            return "9.91E37"
+
+        temp = channel.read_temperature()
+        if temp is None:
+            return "9.91E37"
+
+        return "{:.2f}".format(temp)
 
     def _cmd_unit(self, cmd):
         """MEASure:POWer:UNIT - Set power unit."""

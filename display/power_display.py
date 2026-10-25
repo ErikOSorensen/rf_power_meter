@@ -1,280 +1,248 @@
 # Power Display Module
-# Renders power readings on SSD1306 OLED displays
+# Renders both channels on one 256x64 SSD1322 grayscale OLED
+#
+# Layout (x grows right, y grows down):
+#
+#   0 ┌──────────────────────────────┬──────────────────────────────┐
+#     │ CH1  +40dB        AD8307     │ CH2               NO SENSOR  │
+#  10 │ ▐▀▌▐▀▌  ▐▀▌  (3x digits)     │  ----                        │
+#  36 │ dBm ▐██████████░░░░░░░░░░▌   │                              │
+#  46 │ 23.4 C                       │                              │
+#  56 │ 192.168.1.100                          rfmeter.local        │
+#     └──────────────────────────────┴──────────────────────────────┘
+#
+# Gray levels: 15 = reading, 10 = labels, 5 = secondary text/outlines.
 
-from .ssd1306 import SSD1306_I2C
+from machine import SPI, Pin
+import framebuf
+
+from .ssd1322 import SSD1322
 import config
 
-# Large digit font (16x24 pixels) - simplified bitmap representation
-# Each digit is represented as a list of horizontal lines
-LARGE_DIGITS = {
-    '0': [(2, 12), (0, 14), (0, 14), (0, 14), (0, 14), (0, 14), (2, 12)],
-    '1': [(6, 8), (4, 10), (6, 8), (6, 8), (6, 8), (6, 8), (4, 12)],
-    '2': [(2, 12), (0, 14), (10, 14), (6, 10), (2, 6), (0, 4), (0, 14)],
-    '3': [(2, 12), (0, 14), (10, 14), (6, 12), (10, 14), (0, 14), (2, 12)],
-    '4': [(0, 4), (0, 4), (0, 10), (0, 14), (10, 14), (10, 14), (10, 14)],
-    '5': [(0, 14), (0, 4), (0, 12), (10, 14), (10, 14), (0, 14), (2, 12)],
-    '6': [(4, 12), (2, 6), (0, 4), (0, 12), (0, 14), (0, 14), (2, 12)],
-    '7': [(0, 14), (10, 14), (8, 12), (6, 10), (4, 8), (4, 8), (4, 8)],
-    '8': [(2, 12), (0, 14), (0, 14), (2, 12), (0, 14), (0, 14), (2, 12)],
-    '9': [(2, 12), (0, 14), (0, 14), (2, 14), (10, 14), (8, 12), (2, 10)],
-    '-': [(0, 0), (0, 0), (0, 0), (2, 12), (0, 0), (0, 0), (0, 0)],
-    '.': [(0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (5, 9)],
-    ' ': [(0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0)],
-}
+# Gray levels
+BRIGHT = 15
+LABEL = 10
+DIM = 5
+
+# Geometry
+HALF_WIDTH = config.DISPLAY_WIDTH // 2
+PANE_PAD = 2               # Left/right padding inside a pane
+CHAR_W = 8                 # Built-in framebuf font
+BIG_SCALE = 3              # Main reading at 3x -> 24 px tall
+BIG_CHAR_W = CHAR_W * BIG_SCALE
+
+Y_HEADER = 0
+Y_READING = 10
+Y_UNIT = 36
+Y_INFO = 46
+Y_STATUS = 56
 
 
-class PowerDisplay:
-    """Display power reading on OLED."""
+class ScaledText:
+    """Draws the 8x8 framebuf font at an integer scale."""
 
-    def __init__(self, i2c, address, channel_num):
+    def __init__(self):
+        self._buf = bytearray(CHAR_W * CHAR_W // 2)
+        self._fb = framebuf.FrameBuffer(self._buf, CHAR_W, CHAR_W, framebuf.GS4_HMSB)
+
+    def draw(self, target, text, x, y, scale, col):
         """
-        Initialize power display.
+        Draw text onto target (anything with fill_rect) at an integer scale.
 
-        Args:
-            i2c: I2C bus instance
-            address: OLED I2C address
-            channel_num: Channel number for labeling
+        Returns the x position after the last character.
         """
-        self.display = SSD1306_I2C(
-            config.DISPLAY_WIDTH,
-            config.DISPLAY_HEIGHT,
-            i2c,
-            address
-        )
+        fb = self._fb
+        for ch in text:
+            fb.fill(0)
+            fb.text(ch, 0, 0, 1)
+            for row in range(CHAR_W):
+                run_start = None
+                for colx in range(CHAR_W + 1):
+                    on = colx < CHAR_W and fb.pixel(colx, row)
+                    if on and run_start is None:
+                        run_start = colx
+                    elif not on and run_start is not None:
+                        target.fill_rect(
+                            x + run_start * scale, y + row * scale,
+                            (colx - run_start) * scale, scale, col)
+                        run_start = None
+            x += CHAR_W * scale
+        return x
+
+
+def format_power(value):
+    """Format a power value into at most 5 characters."""
+    if value is None:
+        return "----"
+    mag = abs(value)
+    if mag >= 1000:
+        return "{:.0f}".format(value)
+    if mag >= 100:
+        return "{:.0f}".format(value)
+    if mag >= 10:
+        return "{:.1f}".format(value)
+    return "{:.2f}".format(value)
+
+
+class ChannelPane:
+    """One half of the display, showing a single channel."""
+
+    def __init__(self, display, scaler, channel_num, x0):
+        self.display = display
+        self.scaler = scaler
         self.channel_num = channel_num
-        self.last_power = None
-        self.last_unit = None
-        self.last_sensor = None
+        self.x0 = x0                       # Left edge of this pane
+        self.x1 = x0 + HALF_WIDTH - 1      # Right edge (inclusive)
 
-    def clear(self):
-        """Clear display."""
-        self.display.fill(0)
+    def _text(self, s, x, y, col=LABEL):
+        self.display.text(s, self.x0 + x, y, col)
 
-    def show(self):
-        """Update display."""
-        self.display.show()
+    def _text_right(self, s, y, col=LABEL):
+        x = HALF_WIDTH - PANE_PAD - len(s) * CHAR_W
+        self.display.text(s, self.x0 + x, y, col)
 
-    def draw_large_number(self, value, x, y, width=80):
-        """
-        Draw a large number for power reading.
+    def draw_power_bar(self, power_dbm, x, y, width, height=8,
+                       min_dbm=-60, max_dbm=10):
+        """Draw a bar graph of power level."""
+        d = self.display
+        d.rect(self.x0 + x, y, width, height, DIM)
+        if power_dbm is None:
+            return
+        level = (power_dbm - min_dbm) / (max_dbm - min_dbm)
+        level = max(0.0, min(1.0, level))
+        fill = int((width - 2) * level)
+        if fill > 0:
+            d.fill_rect(self.x0 + x + 1, y + 1, fill, height - 2, BRIGHT)
 
-        Args:
-            value: Numeric value to display
-            x: X position
-            y: Y position
-            width: Available width
-        """
-        if value is None:
-            text = "---.-"
-        else:
-            # Format to one decimal place
-            if value >= 0:
-                text = "{:5.1f}".format(value)
-            else:
-                text = "{:5.1f}".format(value)
-
-        # Use built-in font at 2x scale (simulated with filled rectangles)
-        # Each character is 8 pixels wide in standard font
-        char_width = 12
-        char_height = 16
-
-        for i, char in enumerate(text.strip()):
-            cx = x + i * char_width
-            # Draw character using 2x2 pixel blocks
-            self._draw_char_large(char, cx, y, 2)
-
-    def _draw_char_large(self, char, x, y, scale=2):
-        """Draw a character at larger scale."""
-        # Use standard 8x8 font, scaled up
-        self.display.text(char, x, y, 1)
-        # For larger text, we draw multiple times offset
-        if scale >= 2:
-            self.display.text(char, x + 1, y, 1)
-            self.display.text(char, x, y + 1, 1)
-            self.display.text(char, x + 1, y + 1, 1)
-
-    def draw_power_bar(self, power_dbm, y, min_dbm=-60, max_dbm=10):
-        """
-        Draw power level bar graph.
-
-        Args:
-            power_dbm: Power in dBm
-            y: Y position
-            min_dbm: Minimum scale value
-            max_dbm: Maximum scale value
-        """
-        bar_width = config.DISPLAY_WIDTH - 4
-        bar_height = 8
-
-        # Draw outline
-        self.display.rect(2, y, bar_width, bar_height, 1)
-
-        if power_dbm is not None:
-            # Calculate fill level
-            level = (power_dbm - min_dbm) / (max_dbm - min_dbm)
-            level = max(0.0, min(1.0, level))
-            fill_width = int((bar_width - 2) * level)
-
-            if fill_width > 0:
-                self.display.fill_rect(3, y + 1, fill_width, bar_height - 2, 1)
-
-    def update(self, power_value, unit_str, sensor_type=None, ip_addr=None, attenuator=0.0):
-        """
-        Update display with new reading.
-
-        Args:
-            power_value: Power value (or None for no sensor)
-            unit_str: Unit string (dBm, mW, etc.)
-            sensor_type: Detected sensor type
-            ip_addr: IP address to show
-            attenuator: External attenuator value in dB (0 = none)
-        """
-        self.clear()
-
-        # Channel label (top left)
-        self.display.text("CH{}".format(self.channel_num), 0, 0, 1)
-
-        # Attenuator indicator (next to channel) if active
-        if attenuator != 0.0:
-            atten_str = "+{:.0f}dB".format(attenuator)
-            self.display.text(atten_str, 28, 0, 1)
-
-        # Sensor type (top right)
+    def update(self, power_value, unit_str, sensor_type=None,
+               temperature=None, attenuator=0.0):
+        """Render this channel's pane into the frame buffer (no show)."""
+        # Header: channel, attenuator, sensor type
+        self._text("CH{}".format(self.channel_num), PANE_PAD, Y_HEADER, BRIGHT)
+        if attenuator:
+            self._text("{:+.0f}dB".format(attenuator), PANE_PAD + 4 * CHAR_W, Y_HEADER, LABEL)
         if sensor_type:
-            sensor_text = sensor_type[:8]  # Truncate if needed
-            x = config.DISPLAY_WIDTH - len(sensor_text) * 8
-            self.display.text(sensor_text, x, 0, 1)
+            self._text_right(sensor_type[:8], Y_HEADER, LABEL)
         else:
-            self.display.text("NO SENSOR", 40, 0, 1)
+            self._text_right("NO SENSOR", Y_HEADER, DIM)
 
-        # Main power reading (large, centered)
+        # Main reading
         if power_value is not None:
-            # Format power value
-            if abs(power_value) >= 100:
-                power_str = "{:.0f}".format(power_value)
-            elif abs(power_value) >= 10:
-                power_str = "{:.1f}".format(power_value)
-            else:
-                power_str = "{:.2f}".format(power_value)
+            text = format_power(power_value)
+            # Right-align the number inside the pane
+            x = HALF_WIDTH - PANE_PAD - len(text) * BIG_CHAR_W
+            self.scaler.draw(self.display, text, self.x0 + x, Y_READING, BIG_SCALE, BRIGHT)
 
-            # Draw large power value
-            self._draw_large_text(power_str, 4, 16)
-
-            # Unit
-            self.display.text(unit_str, 90, 24, 1)
-
-            # Power bar
-            self.draw_power_bar(power_value if unit_str == "dBm" else None, 44)
+            self._text(unit_str, PANE_PAD, Y_UNIT, LABEL)
+            bar_x = PANE_PAD + 4 * CHAR_W
+            self.draw_power_bar(power_value if unit_str == "dBm" else None,
+                                bar_x, Y_UNIT, HALF_WIDTH - PANE_PAD - bar_x)
         else:
-            # No sensor connected
-            self._draw_large_text("----", 20, 16)
-            self.display.text("NO SENSOR", 24, 40, 1)
+            x = HALF_WIDTH - PANE_PAD - 4 * BIG_CHAR_W
+            self.scaler.draw(self.display, "----", self.x0 + x, Y_READING, BIG_SCALE, DIM)
 
-        # IP address or status (bottom)
-        if ip_addr:
-            ip_text = ip_addr[:16]  # Truncate if needed
-            self.display.text(ip_text, 0, 56, 1)
-        else:
-            self.display.text("DHCP...", 0, 56, 1)
-
-        self.show()
-
-        # Cache values
-        self.last_power = power_value
-        self.last_unit = unit_str
-        self.last_sensor = sensor_type
-
-    def _draw_large_text(self, text, x, y):
-        """Draw text at 2x scale."""
-        for i, char in enumerate(text):
-            cx = x + i * 14  # 14 pixels per character at 2x
-            # Draw each character 4 times for 2x effect
-            self.display.text(char, cx, y, 1)
-            self.display.text(char, cx + 1, y, 1)
-            self.display.text(char, cx, y + 8, 1)
-            self.display.text(char, cx + 1, y + 8, 1)
-            # Fill in for bolder text
-            self.display.text(char, cx, y + 1, 1)
-            self.display.text(char, cx + 1, y + 1, 1)
-
-    def show_startup(self):
-        """Show startup screen."""
-        self.clear()
-        self.display.text("RF Power Meter", 8, 8, 1)
-        self.display.text("Channel {}".format(self.channel_num), 32, 24, 1)
-        self.display.text(config.MODEL, 40, 40, 1)
-        self.display.text("v" + config.VERSION, 44, 52, 1)
-        self.show()
-
-    def show_error(self, message):
-        """Show error message."""
-        self.clear()
-        self.display.text("ERROR", 44, 16, 1)
-        # Word wrap message
-        words = message.split()
-        line = ""
-        y = 32
-        for word in words:
-            if len(line) + len(word) + 1 <= 16:
-                line += (" " if line else "") + word
-            else:
-                self.display.text(line, 0, y, 1)
-                y += 10
-                line = word
-        if line:
-            self.display.text(line, 0, y, 1)
-        self.show()
+        # Head temperature
+        if temperature is not None:
+            self._text("{:.1f} C".format(temperature), PANE_PAD, Y_INFO, DIM)
 
 
 class DisplayManager:
-    """Manages both channel displays."""
+    """Owns the single SSD1322 panel and renders both channels on it."""
 
-    def __init__(self, i2c):
+    def __init__(self, spi=None):
         """
-        Initialize display manager.
+        Initialize the display.
 
         Args:
-            i2c: I2C bus instance
+            spi: machine.SPI instance for the display, or None to create
+                 SPI1 from the pins in config.py
         """
-        self.displays = {
-            1: PowerDisplay(i2c, config.OLED_ADDR_CH1, 1),
-            2: PowerDisplay(i2c, config.OLED_ADDR_CH2, 2),
+        if spi is None:
+            spi = SPI(
+                config.DISPLAY_SPI_ID,
+                baudrate=config.DISPLAY_SPI_BAUD,
+                polarity=0, phase=0,
+                sck=Pin(config.DISPLAY_SCK),
+                mosi=Pin(config.DISPLAY_MOSI),
+            )
+        self.display = SSD1322(
+            spi,
+            cs=Pin(config.DISPLAY_CS),
+            dc=Pin(config.DISPLAY_DC),
+            rst=Pin(config.DISPLAY_RST),
+            width=config.DISPLAY_WIDTH,
+            height=config.DISPLAY_HEIGHT,
+            col_offset=config.DISPLAY_COL_OFFSET,
+            contrast=config.DISPLAY_CONTRAST,
+        )
+        self.scaler = ScaledText()
+        self.panes = {
+            1: ChannelPane(self.display, self.scaler, 1, 0),
+            2: ChannelPane(self.display, self.scaler, 2, HALF_WIDTH),
         }
         self.ip_address = None
 
     def set_ip_address(self, ip):
-        """Set IP address to display."""
+        """Set IP address to show on the status line."""
         self.ip_address = ip
 
-    def show_startup(self):
-        """Show startup screen on all displays."""
-        for display in self.displays.values():
-            display.show_startup()
+    def _draw_status_line(self):
+        d = self.display
+        if self.ip_address:
+            d.text(self.ip_address[:15], PANE_PAD, Y_STATUS, LABEL)
+        else:
+            d.text("DHCP...", PANE_PAD, Y_STATUS, DIM)
+        host = config.MDNS_HOSTNAME + ".local"
+        d.text(host, config.DISPLAY_WIDTH - PANE_PAD - len(host) * CHAR_W, Y_STATUS, DIM)
 
-    def update(self, channel_num, power_value, unit_str, sensor_type=None, attenuator=0.0):
-        """Update specific channel display."""
-        if channel_num in self.displays:
-            self.displays[channel_num].update(
-                power_value, unit_str, sensor_type, self.ip_address, attenuator
-            )
+    def _draw_divider(self):
+        self.display.vline(HALF_WIDTH - 1, 0, Y_STATUS - 2, DIM)
+
+    def show_startup(self):
+        """Show startup screen."""
+        d = self.display
+        d.fill(0)
+        self.scaler.draw(d, "RF Power Meter", 16, 8, 2, BRIGHT)
+        d.text("{} v{}".format(config.MODEL, config.VERSION), 16, 32, LABEL)
+        d.text("Dual channel, SCPI port {}".format(config.SCPI_PORT), 16, 44, DIM)
+        d.show()
 
     def update_all(self, meter):
         """
-        Update all displays from power meter.
+        Redraw the whole panel from the power meter state.
 
         Args:
             meter: PowerMeter instance
         """
-        for ch_num, display in self.displays.items():
+        d = self.display
+        d.fill(0)
+        for ch_num, pane in self.panes.items():
             channel = meter.get_channel(ch_num)
-            if channel:
-                power, unit = channel.get_power()
-                display.update(
-                    power, unit, channel.sensor_type,
-                    self.ip_address, channel.get_attenuator()
-                )
+            if channel is None:
+                continue
+            power, unit = channel.get_power()
+            pane.update(power, unit, channel.sensor_type,
+                        channel.temperature, channel.get_attenuator())
+        self._draw_divider()
+        self._draw_status_line()
+        d.show()
 
     def show_error(self, message):
-        """Show error on all displays."""
-        for display in self.displays.values():
-            display.show_error(message)
+        """Show an error message across the panel."""
+        d = self.display
+        d.fill(0)
+        self.scaler.draw(d, "ERROR", 8, 8, 2, BRIGHT)
+        # Word wrap at 30 characters
+        words = message.split()
+        line = ""
+        y = 32
+        for word in words:
+            if len(line) + len(word) + 1 <= 30:
+                line += (" " if line else "") + word
+            else:
+                d.text(line, 8, y, LABEL)
+                y += 10
+                line = word
+        if line:
+            d.text(line, 8, y, LABEL)
+        d.show()

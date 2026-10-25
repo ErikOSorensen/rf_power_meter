@@ -1,7 +1,6 @@
 # Calibration Management with EEPROM Storage
-# Reads/writes calibration from sensor module EEPROMs via I2C multiplexer
+# Reads/writes calibration from sensor module EEPROMs, one I2C bus per head
 
-from .tca9548a import TCA9548A
 from .eeprom import SensorEEPROM, EEPROM_DEFAULT_ADDR
 import config
 
@@ -154,52 +153,42 @@ class SensorCalibration:
 
 
 class CalibrationManager:
-    """Manages calibration for all channels via I2C multiplexer and EEPROMs."""
+    """
+    Manages calibration for all channels via the sensor head EEPROMs.
 
-    def __init__(self, i2c, mux_address=None, eeprom_address=None):
+    Every sensor head hangs on its own I2C bus (Pico I2C0 for channel 1,
+    I2C1 for channel 2), so all heads can use the same EEPROM address and
+    nothing has to be selected before talking to a head.
+    """
+
+    def __init__(self, buses, eeprom_address=None):
         """
         Initialize calibration manager.
 
         Args:
-            i2c: I2C bus instance
-            mux_address: TCA9548A multiplexer address
+            buses: Dict mapping channel number to the machine.I2C bus that
+                   goes to that channel's sensor head, e.g. {1: i2c0, 2: i2c1}
             eeprom_address: Sensor EEPROM address (same for all sensors)
         """
-        self.i2c = i2c
-        self.mux_address = mux_address or config.MUX_ADDRESS
+        self.buses = dict(buses)
         self.eeprom_address = eeprom_address or EEPROM_DEFAULT_ADDR
 
-        # Initialize multiplexer
-        try:
-            self.mux = TCA9548A(i2c, self.mux_address)
-        except RuntimeError as e:
-            print("Warning: Multiplexer not found:", e)
-            self.mux = None
-
         # Calibration data per channel
-        self.sensors = {1: None, 2: None}  # SensorCalibration per channel
+        self.sensors = {ch: None for ch in self.buses}  # SensorCalibration per channel
 
-        # Channel to multiplexer mapping
-        self.channel_mux_map = {
-            1: config.MUX_CHANNEL_1,
-            2: config.MUX_CHANNEL_2,
+        # One EEPROM driver per channel, bound to that channel's bus
+        self._eeproms = {
+            ch: SensorEEPROM(bus, self.eeprom_address)
+            for ch, bus in self.buses.items()
         }
 
-    def _select_sensor(self, channel):
-        """Select sensor's I2C channel via multiplexer."""
-        if self.mux is None:
-            return False
+    def get_bus(self, channel):
+        """Get the I2C bus for a channel, or None if the channel does not exist."""
+        return self.buses.get(channel)
 
-        mux_channel = self.channel_mux_map.get(channel)
-        if mux_channel is None:
-            return False
-
-        self.mux.select_channel(mux_channel)
-        return True
-
-    def _get_eeprom(self):
-        """Get EEPROM driver (after selecting channel)."""
-        return SensorEEPROM(self.i2c, self.eeprom_address)
+    def _get_eeprom(self, channel):
+        """Get the EEPROM driver for a channel, or None if the channel does not exist."""
+        return self._eeproms.get(channel)
 
     def detect_sensor(self, channel):
         """
@@ -211,10 +200,9 @@ class CalibrationManager:
         Returns:
             Sensor type string or None if not detected
         """
-        if not self._select_sensor(channel):
+        eeprom = self._get_eeprom(channel)
+        if eeprom is None:
             return None
-
-        eeprom = self._get_eeprom()
 
         if not eeprom.is_present():
             self.sensors[channel] = None
@@ -239,15 +227,12 @@ class CalibrationManager:
         cal_data = eeprom.read_calibration()
         self.sensors[channel].load_cal_data(cal_data)
 
-        # Disable mux channel when done
-        self.mux.disable_all()
-
         return info['type']
 
     def detect_all_sensors(self):
         """Detect sensors on all channels."""
         results = {}
-        for channel in [1, 2]:
+        for channel in self.buses:
             sensor_type = self.detect_sensor(channel)
             results[channel] = sensor_type
         return results
@@ -330,7 +315,7 @@ class CalibrationManager:
         Returns:
             True if successful
         """
-        channels = [channel] if channel else [1, 2]
+        channels = [channel] if channel else list(self.buses)
         success = True
 
         for ch in channels:
@@ -338,20 +323,17 @@ class CalibrationManager:
             if sensor is None:
                 continue
 
-            if not self._select_sensor(ch):
+            eeprom = self._get_eeprom(ch)
+            if eeprom is None:
                 success = False
                 continue
 
             try:
-                eeprom = self._get_eeprom()
                 cal_data = sensor.get_cal_data_for_storage()
                 eeprom.write_calibration(cal_data)
             except OSError as e:
                 print("Error saving calibration for channel {}: {}".format(ch, e))
                 success = False
-
-        if self.mux:
-            self.mux.disable_all()
 
         return success
 

@@ -3,7 +3,7 @@
 
 from micropython import const
 
-# === SPI Pins for W5500 Ethernet ===
+# === SPI0: W5500 Ethernet ===
 W5500_SPI_ID = const(0)
 W5500_SCK = const(18)
 W5500_MOSI = const(19)
@@ -11,30 +11,37 @@ W5500_MISO = const(16)
 W5500_CS = const(17)
 W5500_RST = const(20)
 
-# === I2C Pins ===
-I2C_ID = const(0)
-I2C_SDA = const(0)
-I2C_SCL = const(1)
+# === SPI1: SSD1322 OLED display (4-wire SPI, write only) ===
+DISPLAY_SPI_ID = const(1)
+DISPLAY_SCK = const(10)      # GP10 - SPI1 SCK
+DISPLAY_MOSI = const(11)     # GP11 - SPI1 TX
+DISPLAY_CS = const(13)       # GP13 - chip select (active low)
+DISPLAY_DC = const(14)       # GP14 - data/command (high = data)
+DISPLAY_RST = const(15)      # GP15 - reset (active low)
+DISPLAY_SPI_BAUD = const(10_000_000)
+
+# === I2C: one hardware controller per sensor head ===
+# Each head has its own bus, so all heads can carry identical I2C
+# addresses and no multiplexer is needed.
 I2C_FREQ = const(400000)
 
+I2C_CH1_ID = const(0)        # Pico I2C0 -> sensor head 1
+I2C_CH1_SDA = const(0)       # GP0
+I2C_CH1_SCL = const(1)       # GP1
+
+I2C_CH2_ID = const(1)        # Pico I2C1 -> sensor head 2
+I2C_CH2_SDA = const(2)       # GP2
+I2C_CH2_SCL = const(3)       # GP3
+
 # === Sensor Presence Detect Pins ===
-DETECT_PIN_CH1 = const(2)  # GP2 - Sensor 1 presence detect
-DETECT_PIN_CH2 = const(3)  # GP3 - Sensor 2 presence detect
+# Active low: the head ties the line to GND, the main unit pulls it up.
+DETECT_PIN_CH1 = const(4)    # GP4 - Sensor 1 presence detect
+DETECT_PIN_CH2 = const(5)    # GP5 - Sensor 2 presence detect
 
-# === I2C Multiplexer Reset Pin ===
-MUX_RESET_PIN = const(4)   # GP4 - TCA9548A reset (active low, optional)
-
-# === I2C Addresses ===
-ADS1115_ADDR_CH1 = const(0x48)  # ADDR pin to GND
-ADS1115_ADDR_CH2 = const(0x49)  # ADDR pin to VDD
-OLED_ADDR_CH1 = const(0x3C)
-OLED_ADDR_CH2 = const(0x3D)
-
-# === I2C Multiplexer for Sensor EEPROMs ===
-MUX_ADDRESS = const(0x70)       # TCA9548A address (A0-A2 to GND)
-MUX_CHANNEL_1 = const(0)        # Mux channel for sensor 1 EEPROM
-MUX_CHANNEL_2 = const(1)        # Mux channel for sensor 2 EEPROM
-EEPROM_ADDRESS = const(0x50)    # All sensor EEPROMs at same address
+# === I2C Addresses (identical in every sensor head) ===
+EEPROM_ADDRESS = const(0x50)       # AT24C02 / AT24CS04
+ADS1115_ADDRESS = const(0x48)      # ADS1115 (ADDR pin to GND)
+TEMP_SENSOR_ADDRESS = const(0x18)  # MCP9808 (A0-A2 to GND)
 
 # === Network Configuration ===
 SCPI_PORT = const(5025)
@@ -46,12 +53,15 @@ ADC_SAMPLES_DEFAULT = const(16)  # Default averaging count
 ADC_SAMPLE_RATE = const(128)     # Samples per second (8, 16, 32, 64, 128, 250, 475, 860)
 
 # === Display Configuration ===
-DISPLAY_WIDTH = const(128)
+DISPLAY_WIDTH = const(256)
 DISPLAY_HEIGHT = const(64)
-DISPLAY_UPDATE_MS = const(200)   # 5 Hz update rate
+DISPLAY_COL_OFFSET = const(0x1C)  # First RAM column of a 256-wide panel (module dependent)
+DISPLAY_CONTRAST = const(0x9F)    # SSD1322 contrast current, 0x00-0xFF
+DISPLAY_UPDATE_MS = const(200)    # 5 Hz update rate
 
 # === Sensor Reading Configuration ===
 SENSOR_READ_MS = const(50)       # 20 Hz reading rate
+TEMP_READ_EVERY = const(20)      # Read head temperature every N power readings (1 Hz)
 
 # === Instrument Identity ===
 MANUFACTURER = "HomeLab"

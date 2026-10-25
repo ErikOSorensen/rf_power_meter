@@ -414,5 +414,7 @@
       "Root"
     ]
   ],
-  "text_variables": {}
+  "text_variables": {
+    "RFPM_LIB": "${KIPRJMOD}/../../lib"
+  }
 }

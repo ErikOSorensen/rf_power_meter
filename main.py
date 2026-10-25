@@ -19,7 +19,8 @@ class RFPowerMeter:
 
     def __init__(self):
         """Initialize power meter components."""
-        self.i2c = None
+        self.i2c_ch1 = None
+        self.i2c_ch2 = None
         self.meter = None
         self.display_mgr = None
         self.network = None
@@ -29,23 +30,33 @@ class RFPowerMeter:
         self.running = False
 
     def init_hardware(self):
-        """Initialize I2C bus and hardware."""
+        """Initialize the display, the two sensor I2C buses and the meter."""
         print("Initializing hardware...")
 
-        # Initialize I2C bus
-        self.i2c = I2C(
-            config.I2C_ID,
-            sda=Pin(config.I2C_SDA),
-            scl=Pin(config.I2C_SCL),
+        # Display first, so errors during the rest of start-up can be shown
+        self.display_mgr = DisplayManager()
+        self.display_mgr.show_startup()
+        print("Display initialized")
+
+        # One I2C bus per sensor head
+        self.i2c_ch1 = I2C(
+            config.I2C_CH1_ID,
+            sda=Pin(config.I2C_CH1_SDA),
+            scl=Pin(config.I2C_CH1_SCL),
             freq=config.I2C_FREQ
         )
-
-        # Scan I2C bus
-        devices = self.i2c.scan()
-        print("I2C devices found:", [hex(d) for d in devices])
+        self.i2c_ch2 = I2C(
+            config.I2C_CH2_ID,
+            sda=Pin(config.I2C_CH2_SDA),
+            scl=Pin(config.I2C_CH2_SCL),
+            freq=config.I2C_FREQ
+        )
+        for ch, bus in ((1, self.i2c_ch1), (2, self.i2c_ch2)):
+            devices = bus.scan()
+            print("Head {} I2C devices:".format(ch), [hex(d) for d in devices])
 
         # Initialize power meter
-        self.meter = PowerMeter(self.i2c)
+        self.meter = PowerMeter(self.i2c_ch1, self.i2c_ch2)
         print("Power meter initialized")
 
         # Detect sensors via EEPROM
@@ -58,11 +69,6 @@ class RFPowerMeter:
             else:
                 print("  Channel {}: No sensor".format(ch))
 
-        # Initialize displays
-        self.display_mgr = DisplayManager(self.i2c)
-        self.display_mgr.show_startup()
-        print("Displays initialized")
-
         time.sleep(1)  # Show startup screen briefly
 
     async def init_network(self):
@@ -72,7 +78,7 @@ class RFPowerMeter:
         self.network = get_network()
         self.network.init()
 
-        # Show DHCP status on displays
+        # Show DHCP status on the display
         self.display_mgr.set_ip_address(None)
 
         # Connect with DHCP

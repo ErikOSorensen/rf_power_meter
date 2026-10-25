@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "rf_power_meter")(type "KiCad")(uri "${KIPRJMOD}/../lib/rf_power_meter.kicad_sym")(options "")(descr "RF power meter project symbols"))
+)
