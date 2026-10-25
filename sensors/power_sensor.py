@@ -427,12 +427,24 @@ class PowerMeter:
         return self.cal_mgr.restore_defaults(channel)
 
     def set_cal_offset(self, channel, offset):
-        """Set calibration offset for channel at current frequency."""
-        self.cal_mgr.set_offset(channel, offset)
+        """
+        Set calibration offset for channel at the calibration point nearest
+        to the current frequency.
+
+        Returns:
+            Calibration frequency the offset was stored at, or None
+        """
+        return self.cal_mgr.set_offset(channel, offset)
 
     def set_cal_slope(self, channel, slope):
-        """Set calibration slope for channel at current frequency."""
-        self.cal_mgr.set_slope(channel, slope)
+        """
+        Set calibration slope for channel at the calibration point nearest
+        to the current frequency.
+
+        Returns:
+            Calibration frequency the slope was stored at, or None
+        """
+        return self.cal_mgr.set_slope(channel, slope)
 
     def set_frequency(self, channel, freq_mhz):
         """Set operating frequency for channel."""

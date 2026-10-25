@@ -239,7 +239,12 @@ class SCPICommandHandler:
     # === Frequency Commands ===
 
     def _cmd_frequency(self, cmd):
-        """SENSe:FREQuency - Set operating frequency in MHz."""
+        """SENSe:FREQuency - Set operating frequency in MHz.
+
+        Any frequency within the head's calibrated range is accepted and
+        the calibration is interpolated between the stored points. Values
+        outside the range are clamped to the nearest end point.
+        """
         ch = self._get_channel(cmd)
         freq = cmd.get_param_float()
 
@@ -256,13 +261,12 @@ class SCPICommandHandler:
             self.parser.add_error(-230, "No sensor detected")
             return None
 
-        # Set frequency (snaps to nearest valid)
-        actual_freq = self.meter.set_frequency(ch, int(freq))
+        actual_freq = self.meter.set_frequency(ch, freq)
         self._override_panel()
 
-        if actual_freq != int(freq):
-            # Frequency was snapped to nearest valid value
-            self.parser.add_error(-100, "Frequency snapped to {}".format(actual_freq))
+        if actual_freq != freq:
+            # Outside the calibrated range
+            self.parser.add_error(-222, "Frequency clamped to {}".format(actual_freq))
 
         return None
 
@@ -274,7 +278,7 @@ class SCPICommandHandler:
         if freq is None:
             return "0"
 
-        return str(freq)
+        return "{:g}".format(freq)
 
     def _query_freq_catalog(self, cmd):
         """SENSe:FREQuency:CATalog? - Query available calibration frequencies."""
@@ -319,11 +323,21 @@ class SCPICommandHandler:
 
     # === Calibration Commands ===
 
+    def _report_cal_point(self, ch, point):
+        """Warn when a calibration write landed on a point other than the
+        operating frequency (which may sit between two points)."""
+        if point is None:
+            self.parser.add_error(-230, "No sensor detected")
+        elif point != self.meter.get_frequency(ch):
+            self.parser.add_error(
+                -100, "Calibration stored at nearest point {}".format(point))
+
     def _cmd_cal_offset(self, cmd):
-        """CALibrate:POWer:OFFSet - Set calibration offset for current frequency."""
+        """CALibrate:POWer:OFFSet - Set calibration offset at the nearest calibration point."""
         ch = self._get_channel(cmd)
         offset = cmd.get_param_float(0.0)
-        self.meter.set_cal_offset(ch, offset)  # Uses current frequency
+        point = self.meter.set_cal_offset(ch, offset)
+        self._report_cal_point(ch, point)
         return None
 
     def _query_cal_offset(self, cmd):
@@ -333,10 +347,11 @@ class SCPICommandHandler:
         return "{:.3f}".format(offset)
 
     def _cmd_cal_slope(self, cmd):
-        """CALibrate:POWer:SLOPe - Set calibration slope for current frequency."""
+        """CALibrate:POWer:SLOPe - Set calibration slope at the nearest calibration point."""
         ch = self._get_channel(cmd)
         slope = cmd.get_param_float(1.0)
-        self.meter.set_cal_slope(ch, slope)  # Uses current frequency
+        point = self.meter.set_cal_slope(ch, slope)
+        self._report_cal_point(ch, point)
         return None
 
     def _query_cal_slope(self, cmd):

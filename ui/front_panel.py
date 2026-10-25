@@ -99,12 +99,22 @@ class FrontPanel:
             return
 
         if field == FIELD_FREQUENCY:
+            # The panel steps through the calibration points only. If SCPI
+            # left the frequency between two points, the first click lands
+            # on the neighbouring point in the direction of rotation.
             freqs = channel.get_frequencies()
             if not freqs:
                 return
             current = channel.get_frequency()
-            idx = freqs.index(current) if current in freqs else 0
-            idx = max(0, min(len(freqs) - 1, idx + delta))
+            if current in freqs:
+                idx = freqs.index(current) + delta
+            else:
+                above = [i for i, f in enumerate(freqs) if f > current]
+                first_above = above[0] if above else len(freqs)
+                # delta > 0: first point above, then onwards; delta < 0:
+                # first point below, then downwards
+                idx = first_above + delta - 1 if delta > 0 else first_above + delta
+            idx = max(0, min(len(freqs) - 1, idx))
             channel.set_frequency(freqs[idx])
 
         elif field == FIELD_ATTENUATOR:

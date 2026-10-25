@@ -25,7 +25,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 ## Key Features
 
 - **EEPROM-based calibration**: Each sensor module stores its own calibration data in an onboard EEPROM. Calibration travels with the sensor, not the channel.
-- **Frequency-dependent calibration**: Store separate offset/slope corrections for each calibration frequency.
+- **Frequency-dependent calibration**: Store separate offset/slope corrections for each calibration frequency. Between points the corrections are linearly interpolated.
 - **Self-contained sensor heads**: Each head carries its detector, 16-bit ADC, temperature sensor and EEPROM. Only power and I2C travel over the cable.
 - **One I2C bus per head**: Each sensor head hangs on its own Pico I2C controller (I2C0 for channel 1, I2C1 for channel 2), so heads are interchangeable and no multiplexer is needed.
 - **Hot-swappable sensors**: Sensors are automatically detected at startup and on plug-in via a presence detect line.
@@ -429,9 +429,11 @@ only.
   measurement view immediately. The active field is drawn inverted on
   the display. Channels without a sensor skip the frequency field.
 - **Rotation** changes the highlighted field. Frequency steps through the
-  head's calibration frequencies. Attenuator steps in whole 1 dB units
-  between 0 and 60 dB. A fractional value set over SCPI is rounded on
-  the first click.
+  head's calibration frequencies only; if SCPI left it between two
+  points, the first click moves to the neighbouring point in the
+  direction of rotation. Attenuator steps in whole 1 dB units between 0
+  and 60 dB. A fractional value set over SCPI is rounded on the first
+  click.
 - **Idle timeout:** 5 seconds without input returns to the measurement
   view.
 - **SCPI override:** a remote `SENSe:FREQuency`, `SENSe:ATTenuation` or
@@ -471,9 +473,9 @@ Connect via TCP port 5025. Commands are terminated with newline (`\n`).
 
 | Command | Description |
 |---------|-------------|
-| `SENSe:FREQuency[1\|2] <MHz>` | Set operating frequency |
+| `SENSe:FREQuency[1\|2] <MHz>` | Set operating frequency. Any value inside the head's calibrated range; corrections are interpolated between calibration points. Outside the range the value is clamped and error -222 is queued |
 | `SENSe:FREQuency[1\|2]?` | Query current frequency |
-| `SENSe:FREQuency[1\|2]:CATalog?` | Query available frequencies |
+| `SENSe:FREQuency[1\|2]:CATalog?` | Query the calibration frequencies |
 
 ### External Attenuator Commands
 
@@ -500,10 +502,10 @@ Calibration is stored **per frequency** on the **sensor EEPROM**.
 
 | Command | Description |
 |---------|-------------|
-| `CALibrate:POWer[1\|2]:OFFSet <dB>` | Set offset (at current frequency) |
-| `CALibrate:POWer[1\|2]:OFFSet?` | Query offset |
-| `CALibrate:POWer[1\|2]:SLOPe <factor>` | Set slope correction |
-| `CALibrate:POWer[1\|2]:SLOPe?` | Query slope |
+| `CALibrate:POWer[1\|2]:OFFSet <dB>` | Set offset at the calibration point nearest the current frequency. Error -100 is queued if that point differs from the current frequency |
+| `CALibrate:POWer[1\|2]:OFFSet?` | Query offset at the current frequency (interpolated) |
+| `CALibrate:POWer[1\|2]:SLOPe <factor>` | Set slope correction at the nearest calibration point |
+| `CALibrate:POWer[1\|2]:SLOPe?` | Query slope at the current frequency (interpolated) |
 | `CALibrate:POWer[1\|2]:SAVE` | Save to sensor EEPROM |
 | `CALibrate:POWer[1\|2]:RESTore` | Restore defaults |
 | `CALibrate:SENSor[1\|2]:TYPE?` | Query sensor type |
@@ -528,6 +530,8 @@ Calibration is stored **per frequency** on the **sensor EEPROM**.
 2. **Calibration storage**: Each sensor stores its own calibration data. When you move a sensor to a different channel or different meter, the calibration follows.
 
 3. **Per-frequency corrections**: RF detectors have frequency-dependent response. Store separate offset/slope for each calibration frequency.
+
+4. **Interpolation**: The operating frequency can be any value inside the calibrated range. The offset and slope used for the conversion are linearly interpolated between the two calibration points that bracket it, so sweeping the frequency over SCPI gives a smooth correction instead of steps at the midpoints. Outside the range the frequency is clamped to the nearest end point. Calibration writes (`CALibrate:POWer:OFFSet`, `:SLOPe`) always land on a stored point, the one nearest the current frequency, because the EEPROM holds values at the calibration points only.
 
 ### EEPROM Data Format
 

@@ -40,10 +40,11 @@ class SensorCalibration:
         self.serial = serial
         self.base_slope = base_slope
         self.base_intercept = base_intercept
-        self.frequencies = frequencies or []
+        self.frequencies = sorted(frequencies) if frequencies else []
 
-        # Current operating frequency (defaults to lowest)
-        self.current_frequency = frequencies[0] if frequencies else 0
+        # Current operating frequency (defaults to lowest). May lie between
+        # calibration points; corrections are then interpolated.
+        self.current_frequency = self.frequencies[0] if self.frequencies else 0
 
         # Per-frequency calibration corrections
         self.freq_cal = {}
@@ -58,57 +59,120 @@ class SensorCalibration:
         """
         Set current operating frequency.
 
+        Any frequency inside the calibrated range is accepted; the
+        corrections are interpolated between the neighbouring calibration
+        points. Outside the range the frequency is clamped to the nearest
+        end point.
+
         Args:
             freq_mhz: Frequency in MHz
 
         Returns:
-            Actual frequency set (snaps to nearest valid)
+            Actual frequency set
         """
         if not self.frequencies:
             return 0
 
-        if freq_mhz in self.frequencies:
-            self.current_frequency = freq_mhz
-            return freq_mhz
+        freq = max(self.frequencies[0], min(self.frequencies[-1], freq_mhz))
+        if freq == int(freq):
+            freq = int(freq)
+        self.current_frequency = freq
+        return freq
 
-        # Find closest match
-        closest = min(self.frequencies, key=lambda f: abs(f - freq_mhz))
-        self.current_frequency = closest
-        return closest
+    def nearest_frequency(self, freq_mhz=None):
+        """Calibration point closest to freq_mhz (default: current frequency)."""
+        if not self.frequencies:
+            return None
+        if freq_mhz is None:
+            freq_mhz = self.current_frequency
+        return min(self.frequencies, key=lambda f: abs(f - freq_mhz))
+
+    def _bracket(self, freq):
+        """
+        Return (f_lo, f_hi, t) so that freq = f_lo + t * (f_hi - f_lo),
+        with f_lo and f_hi adjacent calibration points. At or beyond the
+        ends, and at an exact point, f_lo == f_hi and t == 0.
+        """
+        freqs = self.frequencies
+        if freq <= freqs[0]:
+            return freqs[0], freqs[0], 0.0
+        if freq >= freqs[-1]:
+            return freqs[-1], freqs[-1], 0.0
+        for i in range(1, len(freqs)):
+            if freq <= freqs[i]:
+                lo, hi = freqs[i - 1], freqs[i]
+                if freq == hi:
+                    return hi, hi, 0.0
+                return lo, hi, (freq - lo) / (hi - lo)
+        return freqs[-1], freqs[-1], 0.0
+
+    def _interpolate(self, freq, getter):
+        """Linearly interpolate a per-point value at freq."""
+        lo, hi, t = self._bracket(freq)
+        v_lo = getter(lo)
+        if lo == hi:
+            return v_lo
+        return v_lo + t * (getter(hi) - v_lo)
+
+    def _point_offset(self, freq):
+        cal = self.freq_cal.get(freq)
+        return cal.offset if cal else 0.0
+
+    def _point_slope(self, freq):
+        cal = self.freq_cal.get(freq)
+        return cal.slope if cal else 1.0
 
     def get_frequency(self):
         """Get current operating frequency."""
         return self.current_frequency
 
     def set_offset(self, offset, frequency=None):
-        """Set calibration offset for a frequency."""
-        freq = frequency if frequency is not None else self.current_frequency
-        if freq in self.freq_cal:
-            self.freq_cal[freq].offset = offset
-        elif freq in self.frequencies:
-            self.freq_cal[freq] = FrequencyCalibration(freq, offset, 1.0)
+        """
+        Set calibration offset at the calibration point nearest to
+        frequency (default: current frequency).
+
+        Returns:
+            The calibration frequency the offset was stored at, or None
+        """
+        point = self.nearest_frequency(frequency)
+        if point is None:
+            return None
+        if point in self.freq_cal:
+            self.freq_cal[point].offset = offset
+        else:
+            self.freq_cal[point] = FrequencyCalibration(point, offset, 1.0)
+        return point
 
     def get_offset(self, frequency=None):
-        """Get calibration offset for a frequency."""
+        """Get calibration offset at a frequency, interpolated between points."""
+        if not self.frequencies:
+            return 0.0
         freq = frequency if frequency is not None else self.current_frequency
-        if freq in self.freq_cal:
-            return self.freq_cal[freq].offset
-        return 0.0
+        return self._interpolate(freq, self._point_offset)
 
     def set_slope(self, slope, frequency=None):
-        """Set calibration slope for a frequency."""
-        freq = frequency if frequency is not None else self.current_frequency
-        if freq in self.freq_cal:
-            self.freq_cal[freq].slope = slope
-        elif freq in self.frequencies:
-            self.freq_cal[freq] = FrequencyCalibration(freq, 0.0, slope)
+        """
+        Set calibration slope at the calibration point nearest to
+        frequency (default: current frequency).
+
+        Returns:
+            The calibration frequency the slope was stored at, or None
+        """
+        point = self.nearest_frequency(frequency)
+        if point is None:
+            return None
+        if point in self.freq_cal:
+            self.freq_cal[point].slope = slope
+        else:
+            self.freq_cal[point] = FrequencyCalibration(point, 0.0, slope)
+        return point
 
     def get_slope(self, frequency=None):
-        """Get calibration slope for a frequency."""
+        """Get calibration slope at a frequency, interpolated between points."""
+        if not self.frequencies:
+            return 1.0
         freq = frequency if frequency is not None else self.current_frequency
-        if freq in self.freq_cal:
-            return self.freq_cal[freq].slope
-        return 1.0
+        return self._interpolate(freq, self._point_slope)
 
     def voltage_to_dbm(self, voltage):
         """
@@ -126,7 +190,8 @@ class SensorCalibration:
         # Base conversion
         raw_dbm = (voltage / self.base_slope) + self.base_intercept
 
-        # Apply frequency-dependent corrections
+        # Apply frequency-dependent corrections, interpolated between the
+        # calibration points that bracket the operating frequency
         freq_offset = self.get_offset()
         freq_slope = self.get_slope()
 
@@ -273,10 +338,16 @@ class CalibrationManager:
         return []
 
     def set_offset(self, channel, offset, frequency=None):
-        """Set calibration offset for channel at frequency."""
+        """
+        Set calibration offset for channel at the nearest calibration point.
+
+        Returns:
+            Calibration frequency the offset was stored at, or None
+        """
         sensor = self.sensors.get(channel)
         if sensor:
-            sensor.set_offset(offset, frequency)
+            return sensor.set_offset(offset, frequency)
+        return None
 
     def get_offset(self, channel, frequency=None):
         """Get calibration offset for channel at frequency."""
@@ -286,10 +357,16 @@ class CalibrationManager:
         return 0.0
 
     def set_slope(self, channel, slope, frequency=None):
-        """Set calibration slope for channel at frequency."""
+        """
+        Set calibration slope for channel at the nearest calibration point.
+
+        Returns:
+            Calibration frequency the slope was stored at, or None
+        """
         sensor = self.sensors.get(channel)
         if sensor:
-            sensor.set_slope(slope, frequency)
+            return sensor.set_slope(slope, frequency)
+        return None
 
     def get_slope(self, channel, frequency=None):
         """Get calibration slope for channel at frequency."""
@@ -352,6 +429,11 @@ class CalibrationManager:
             self.save(channel)
             return True
         return False
+
+    def get_nearest_frequency(self, channel):
+        """Calibration point nearest to the channel's operating frequency."""
+        sensor = self.sensors.get(channel)
+        return sensor.nearest_frequency() if sensor else None
 
     def get_sensor_info(self, channel):
         """Get full sensor information for channel."""
