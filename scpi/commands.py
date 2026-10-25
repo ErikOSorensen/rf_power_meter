@@ -9,16 +9,20 @@ import config
 class SCPICommandHandler:
     """Handles SCPI commands for the RF power meter."""
 
-    def __init__(self, power_meter, network=None):
+    def __init__(self, power_meter, network=None, front_panel=None):
         """
         Initialize command handler.
 
         Args:
             power_meter: PowerMeter instance
             network: W5500Network instance (optional)
+            front_panel: FrontPanel instance (optional). Remote writes to
+                         frequency or attenuator cancel any manual edit in
+                         progress, and SYSTem:KLOCk locks the panel.
         """
         self.meter = power_meter
         self.network = network
+        self.front_panel = front_panel
         self.parser = SCPIParser()
         self.opc_flag = True  # Operation complete
 
@@ -60,6 +64,7 @@ class SCPICommandHandler:
         p.register("SYSTem:VERSion", self._query_version, self._query_version)
         p.register("SYSTem:NET:IP", self._query_ip, self._query_ip)
         p.register("SYSTem:NET:MAC", self._query_mac, self._query_mac)
+        p.register("SYSTem:KLOCk", self._cmd_klock, self._query_klock)
 
     def handle(self, command_str):
         """
@@ -76,6 +81,11 @@ class SCPICommandHandler:
     def _get_channel(self, cmd, default=1):
         """Get channel number from command."""
         return cmd.channel if cmd.channel else default
+
+    def _override_panel(self):
+        """A remote write supersedes any manual edit in progress."""
+        if self.front_panel is not None:
+            self.front_panel.cancel_edit()
 
     # === IEEE 488.2 Common Commands ===
 
@@ -96,6 +106,7 @@ class SCPICommandHandler:
         """*RST - Reset instrument to default state."""
         self.meter.reset()
         self.parser.clear_errors()
+        self._override_panel()
         return None
 
     def _cmd_opc(self, cmd):
@@ -247,6 +258,7 @@ class SCPICommandHandler:
 
         # Set frequency (snaps to nearest valid)
         actual_freq = self.meter.set_frequency(ch, int(freq))
+        self._override_panel()
 
         if actual_freq != int(freq):
             # Frequency was snapped to nearest valid value
@@ -292,6 +304,7 @@ class SCPICommandHandler:
 
         atten = cmd.get_param_float(0.0)
         channel.set_attenuator(atten)
+        self._override_panel()
         return None
 
     def _query_attenuator(self, cmd):
@@ -384,17 +397,43 @@ class SCPICommandHandler:
             return mac if mac else "00:00:00:00:00:00"
         return "00:00:00:00:00:00"
 
+    def _cmd_klock(self, cmd):
+        """SYSTem:KLOCk ON|OFF|1|0 - Lock or unlock the front panel encoder.
 
-def create_scpi_handler(power_meter, network=None):
+        The lock is not persistent; the instrument always powers up unlocked.
+        """
+        if self.front_panel is None:
+            self.parser.add_error(-241, "Hardware missing")
+            return None
+
+        param = cmd.get_param_str("")
+        param = param.upper()
+        if param in ("ON", "1"):
+            self.front_panel.set_locked(True)
+        elif param in ("OFF", "0"):
+            self.front_panel.set_locked(False)
+        else:
+            self.parser.add_error(-224, "Illegal parameter value")
+        return None
+
+    def _query_klock(self, cmd):
+        """SYSTem:KLOCk? - Query front panel lock state."""
+        if self.front_panel is None:
+            return "0"
+        return "1" if self.front_panel.locked else "0"
+
+
+def create_scpi_handler(power_meter, network=None, front_panel=None):
     """
     Create SCPI command handler function.
 
     Args:
         power_meter: PowerMeter instance
         network: W5500Network instance
+        front_panel: FrontPanel instance (optional)
 
     Returns:
         Handler function for SCPI commands
     """
-    handler = SCPICommandHandler(power_meter, network)
+    handler = SCPICommandHandler(power_meter, network, front_panel)
     return handler.handle

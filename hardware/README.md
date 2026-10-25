@@ -4,7 +4,7 @@ KiCad project files for the RF Power Meter.
 
 ## Directory Structure
 
-- `main_board/` - Main unit PCB: Pico, W5500, SSD1322 OLED header, RJ45 jacks
+- `main_board/` - Main unit PCB: Pico, W5500, SSD1322 OLED header, encoder debounce, RJ45 jacks
 - `sensor_heads/AD8307/` - AD8307 sensor head (detector + ADC + temperature sensor + EEPROM). Template for other heads.
 - `lib/` - Project-local KiCad library (symbols, footprints, 3D models). See `lib/README.md`.
 
@@ -547,6 +547,57 @@ GND              ───────────► GND
 - **Header:** 1x7 or 1x8 pin header (or the module's FPC breakout) on
   the main board; the module mounts behind the front panel.
 
+## Rotary Encoder and Debouncing
+
+A 24-detent rotary encoder with push switch (Bourns PEC11R-4215F-S0024
+or Alps EC11E) on the front panel sets frequency and external
+attenuator. All three contacts are debounced in hardware: an RC filter
+followed by a 74HC14 Schmitt inverter, so the Pico only ever sees one
+clean edge per contact change and the firmware uses plain edge
+interrupts with no debounce timers.
+
+```
+                 R1              R2
+3V3 ────────────[10kΩ]────┬─────[10kΩ]─────┬──────┤>o────── GP6 (A)
+                          │                │     74HC14
+                     encoder A           [10nF]
+                       contact             │
+                          │                │
+                         GND              GND
+
+(identical for B → GP7 and the switch → GP8)
+```
+
+| Signal | Encoder pin | Filter | 74HC14 | Pico |
+|--------|-------------|--------|--------|------|
+| A | A | 10kΩ + 10kΩ + 10nF | 1A → 1Y | GP6 |
+| B | B | 10kΩ + 10kΩ + 10nF | 2A → 2Y | GP7 |
+| Switch | S1 | 10kΩ + 10kΩ + 10nF | 3A → 3Y | GP8 |
+| Common | C, S2 | GND | | |
+
+- **RC values:** R1 pulls the contact up, R2 and C form the filter, time
+  constant 100µs. This is the Bourns-recommended network: it swallows
+  contact bounce of a few hundred microseconds and still passes the
+  fastest realistic spin (a 24-detent encoder turned at 5 turns per
+  second gives 2ms per detent, 500µs per quadrature transition).
+- **74HC14:** runs from 3V3 with a 100nF decoupling capacitor. Its
+  hysteresis (~0.9V at 3.3V) turns the slow RC ramp into a single sharp
+  transition, so there are no double interrupts. Tie the three unused
+  inputs (4A, 5A, 6A) to GND and leave their outputs open.
+- **Inversion:** the inverter makes a closed contact read HIGH. The
+  quadrature direction is unaffected (both channels are inverted
+  together) and the switch polarity is set by
+  `config.ENCODER_SW_ACTIVE_HIGH = True`. If clockwise turns the wrong
+  way, set `config.ENCODER_REVERSE` rather than swapping wires.
+- **Placement:** put the resistors, capacitors and the 74HC14 on the main
+  board next to the Pico, not at the encoder. The panel wiring then
+  carries only raw contacts to ground, and the 74HC14 doubles as an ESD
+  buffer for those leads. Keep the wiring under ~20cm; longer runs are
+  fine too since the signals are DC until the RC.
+- **Pico side:** the RP2040 pads have their own Schmitt input stage, so
+  the RC filter alone would usually work. The 74HC14 is cheap insurance
+  for a panel control that gets handled constantly.
+
 ## Presence Detect Conditioning
 
 The head ties RJ45 pin 8 to GND. The main unit pulls the line up and
@@ -615,7 +666,8 @@ have not yet been updated:
   10kΩ pull-ups, pins 5, 6 and 7 become GND, presence detect on pin 8
   goes to GP4/GP5. Presence detect pull-downs R10/R11 become pull-ups to
   3V3. New: a header for the SSD1322 module on SPI1 (GP10, GP11,
-  GP13-GP15) and a SOT-223 3.3V LDO for it from the 5V rail. The 12V
+  GP13-GP15), the encoder header with its RC filters and 74HC14 (GP6-GP8),
+  and a SOT-223 3.3V LDO for the display from the 5V rail. The 12V
   input (jack, 100µF, 15V TVS), the LM317M 8V head rail, the 5V buck
   module and the Pico are not drawn yet.
 - `sensor_heads/AD8307`: needs the ADS1115, the MCP9808, the 100nF

@@ -30,6 +30,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 - **One I2C bus per head**: Each sensor head hangs on its own Pico I2C controller (I2C0 for channel 1, I2C1 for channel 2), so heads are interchangeable and no multiplexer is needed.
 - **Hot-swappable sensors**: Sensors are automatically detected at startup and on plug-in via a presence detect line.
 - **Single 256x64 grayscale OLED**: An SSD1322 panel over SPI shows both channels side by side.
+- **Front panel encoder**: A rotary encoder with push switch sets the frequency and external attenuator of each channel. SCPI writes override it, and `SYSTem:KLOCk` can lock it out.
 - **SCPI control**: Standard SCPI commands over TCP port 5025.
 - **mDNS discovery**: Find the meter as `rfmeter.local`.
 
@@ -40,7 +41,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 | File | Purpose |
 |------|---------|
 | `main.py` | Application entry point. Initializes hardware, detects sensors, starts async tasks for sensor reading (50ms), display updates (200ms), TCP server, and mDNS. |
-| `config.py` | Central configuration: GPIO pins, I2C buses and addresses, display SPI, network settings, instrument identity. |
+| `config.py` | Central configuration: GPIO pins, I2C buses and addresses, display SPI, encoder, network settings, instrument identity. |
 
 ### Sensors (`sensors/`)
 
@@ -58,6 +59,13 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 |------|---------|
 | `ssd1322.py` | Low-level driver for the SSD1322 256x64 4-bit grayscale OLED (4-wire SPI). Frame buffer is `framebuf.GS4_HMSB`, which matches the controller's RAM layout. |
 | `power_display.py` | Power meter UI rendering. Splits the panel into two panes, one per channel: large reading, unit, bar graph, sensor type, head temperature; IP address and hostname on a shared status line. |
+
+### Front Panel (`ui/`)
+
+| File | Purpose |
+|------|---------|
+| `encoder.py` | Rotary encoder quadrature decoder and push button, interrupt driven. Expects hardware-debounced inputs. |
+| `front_panel.py` | Edit-mode state machine: short press cycles CH1 frequency → CH1 attenuator → CH2 frequency → CH2 attenuator → back to measurement; rotation changes the highlighted value; 5 s idle timeout; remote lock. |
 
 ### Network (`network/`)
 
@@ -222,6 +230,9 @@ not yet stored in the EEPROM format (see format version in `eeprom.py`).
 | Head 2 I2C SCL | GP3 | I2C1 → RJ45 #2 pin 4 |
 | Sensor 1 Detect | GP4 | Pull-up, active low, IRQ on edge |
 | Sensor 2 Detect | GP5 | Pull-up, active low, IRQ on edge |
+| Encoder A | GP6 | Via RC filter + 74HC14, IRQ on edge |
+| Encoder B | GP7 | Via RC filter + 74HC14, IRQ on edge |
+| Encoder Switch | GP8 | Via RC filter + 74HC14, high = pressed |
 | Display SPI SCK | GP10 | SPI1 |
 | Display SPI MOSI | GP11 | SPI1 TX (SSD1322 is write-only) |
 | Display CS | GP13 | Active low |
@@ -235,8 +246,8 @@ not yet stored in the EEPROM format (see format version in `eeprom.py`).
 | W5500 INT | GP21 | Not used by the firmware |
 
 The controller is a W5500-EVB-Pico, so the W5500 and its SPI wiring
-(GP16-GP21) are on the module itself. GP6-GP9, GP12, GP22 and GP26-GP28
-are free (front panel buttons, encoder, status LED).
+(GP16-GP21) are on the module itself. GP9, GP12, GP22 and GP26-GP28 are
+free (extra buttons, status LED).
 
 ### Sensor Head Schematic
 
@@ -404,6 +415,33 @@ analog chain moved to the heads, the main unit is purely digital.
 - Typical total input current: ~250mA at 12V (depends on detectors,
   display content and Ethernet activity); the 1A adapter has ample margin
 
+## Front Panel Operation
+
+The rotary encoder with push switch gives manual access to the two
+settings that depend on the measurement setup: the operating frequency
+and the external attenuator of each channel. Everything else is SCPI
+only.
+
+- **Measurement view** (default): rotation does nothing.
+- **Short press** enters edit mode on the first field and, on each
+  further press, moves to the next: CH1 frequency, CH1 attenuator, CH2
+  frequency, CH2 attenuator. A press after the last field returns to the
+  measurement view immediately. The active field is drawn inverted on
+  the display. Channels without a sensor skip the frequency field.
+- **Rotation** changes the highlighted field. Frequency steps through the
+  head's calibration frequencies. Attenuator steps in whole 1 dB units
+  between 0 and 60 dB. A fractional value set over SCPI is rounded on
+  the first click.
+- **Idle timeout:** 5 seconds without input returns to the measurement
+  view.
+- **SCPI override:** a remote `SENSe:FREQuency`, `SENSe:ATTenuation` or
+  `*RST` applies immediately and drops the panel out of edit mode, so
+  the display never shows a stale highlighted value. The last writer
+  wins.
+- **Remote lock:** `SYSTem:KLOCk ON` disables the encoder and shows
+  REMOTE LOCK on the status line. The lock is not stored; the instrument
+  always powers up unlocked.
+
 ## SCPI Command Reference
 
 Connect via TCP port 5025. Commands are terminated with newline (`\n`).
@@ -478,6 +516,8 @@ Calibration is stored **per frequency** on the **sensor EEPROM**.
 | `SYSTem:VERSion?` | Query SCPI version |
 | `SYSTem:NET:IP?` | Query IP address |
 | `SYSTem:NET:MAC?` | Query MAC address |
+| `SYSTem:KLOCk ON\|OFF` | Lock or unlock the front panel encoder. Always unlocked at power-up |
+| `SYSTem:KLOCk?` | Query front panel lock (1 = locked) |
 
 ## Calibration
 

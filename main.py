@@ -8,6 +8,7 @@ import time
 import config
 from sensors.power_sensor import PowerMeter
 from display.power_display import DisplayManager
+from ui.front_panel import FrontPanel
 from network.w5500 import get_network, init_network_async
 from network.tcp_server import TCPServer
 from network.mdns import MDNSResponder
@@ -22,6 +23,7 @@ class RFPowerMeter:
         self.i2c_ch1 = None
         self.i2c_ch2 = None
         self.meter = None
+        self.front_panel = None
         self.display_mgr = None
         self.network = None
         self.tcp_server = None
@@ -69,6 +71,10 @@ class RFPowerMeter:
             else:
                 print("  Channel {}: No sensor".format(ch))
 
+        # Front panel encoder (always powers up unlocked)
+        self.front_panel = FrontPanel(self.meter)
+        print("Front panel initialized")
+
         time.sleep(1)  # Show startup screen briefly
 
     async def init_network(self):
@@ -99,7 +105,8 @@ class RFPowerMeter:
 
     def init_scpi(self):
         """Initialize SCPI command handler."""
-        self.scpi_handler = create_scpi_handler(self.meter, self.network)
+        self.scpi_handler = create_scpi_handler(
+            self.meter, self.network, self.front_panel)
         print("SCPI handler initialized")
 
     async def sensor_task(self):
@@ -126,11 +133,34 @@ class RFPowerMeter:
 
         while self.running:
             try:
-                self.display_mgr.update_all(self.meter)
+                self.display_mgr.update_all(
+                    self.meter,
+                    edit=self.front_panel.edit,
+                    locked=self.front_panel.locked,
+                )
                 await asyncio.sleep_ms(config.DISPLAY_UPDATE_MS)
 
             except Exception as e:
                 print("Display task error:", e)
+                await asyncio.sleep_ms(1000)
+
+    async def front_panel_task(self):
+        """Task for the rotary encoder and push switch."""
+        print("Front panel task started")
+
+        while self.running:
+            try:
+                if self.front_panel.poll():
+                    # Redraw immediately so edits feel responsive
+                    self.display_mgr.update_all(
+                        self.meter,
+                        edit=self.front_panel.edit,
+                        locked=self.front_panel.locked,
+                    )
+                await asyncio.sleep_ms(config.UI_POLL_MS)
+
+            except Exception as e:
+                print("Front panel task error:", e)
                 await asyncio.sleep_ms(1000)
 
     async def scpi_server_task(self):
@@ -181,6 +211,7 @@ class RFPowerMeter:
         tasks = [
             asyncio.create_task(self.sensor_task()),
             asyncio.create_task(self.display_task()),
+            asyncio.create_task(self.front_panel_task()),
         ]
 
         # Add network tasks if connected

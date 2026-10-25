@@ -47,17 +47,17 @@ class SCPICommand:
         self._extract_channel()
 
     def _extract_channel(self):
-        """Extract channel number from command keywords."""
-        if not self.keywords:
-            return
+        """
+        Extract channel number from command keywords.
 
-        last_kw = self.keywords[-1]
-
-        # Check for numeric suffix (POW1, POW2)
-        if last_kw and last_kw[-1].isdigit():
-            self.channel = int(last_kw[-1])
-            # Store keyword without channel suffix
-            self.keywords[-1] = last_kw[:-1]
+        SCPI allows a numeric suffix on any keyword (SENS1:FREQ, MEAS:POW2).
+        The first suffix found is taken as the channel and stripped.
+        """
+        for i, kw in enumerate(self.keywords):
+            if kw and not kw.startswith('*') and kw[-1].isdigit():
+                self.channel = int(kw[-1])
+                self.keywords[i] = kw[:-1]
+                return
 
     def match(self, pattern):
         """
@@ -72,7 +72,8 @@ class SCPICommand:
         Returns:
             True if command matches pattern
         """
-        pattern_parts = pattern.upper().split(':')
+        # Keep the pattern's case: uppercase marks the required short form
+        pattern_parts = pattern.split(':')
 
         if len(self.keywords) != len(pattern_parts):
             return False

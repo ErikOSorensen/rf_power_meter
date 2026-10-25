@@ -38,6 +38,22 @@ I2C_CH2_SCL = const(3)       # GP3
 DETECT_PIN_CH1 = const(4)    # GP4 - Sensor 1 presence detect
 DETECT_PIN_CH2 = const(5)    # GP5 - Sensor 2 presence detect
 
+# === Rotary Encoder with Push Switch (front panel) ===
+# Contacts go through RC filters and a 74HC14 Schmitt inverter, so the
+# Pico sees clean, inverted edges: a closed contact reads HIGH.
+ENCODER_A = const(6)         # GP6 - quadrature A (via 74HC14)
+ENCODER_B = const(7)         # GP7 - quadrature B (via 74HC14)
+ENCODER_SW = const(8)        # GP8 - push switch (via 74HC14)
+ENCODER_SW_ACTIVE_HIGH = True   # True with the 74HC14 inverter
+ENCODER_REVERSE = False      # Flip if clockwise decreases values
+ENCODER_STEPS_PER_DETENT = const(4)  # Quadrature transitions per click (24 PPR / 24 detent)
+
+# === Front Panel UI ===
+UI_POLL_MS = const(20)           # Front panel poll interval
+UI_EDIT_TIMEOUT_MS = const(5000) # Return to measurement view after idle
+UI_ATTEN_STEP_DB = const(1)      # Attenuator step per encoder click
+UI_ATTEN_MAX_DB = const(60)      # Attenuator ceiling for manual entry
+
 # === I2C Addresses (identical in every sensor head) ===
 EEPROM_ADDRESS = const(0x50)       # AT24C02 / AT24CS04
 ADS1115_ADDRESS = const(0x48)      # ADS1115 (ADDR pin to GND)

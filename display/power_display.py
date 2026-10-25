@@ -4,12 +4,15 @@
 # Layout (x grows right, y grows down):
 #
 #   0 ┌──────────────────────────────┬──────────────────────────────┐
-#     │ CH1  +40dB        AD8307     │ CH2               NO SENSOR  │
+#     │ CH1 23.4C         AD8307     │ CH2               NO SENSOR  │
 #  10 │ ▐▀▌▐▀▌  ▐▀▌  (3x digits)     │  ----                        │
 #  36 │ dBm ▐██████████░░░░░░░░░░▌   │                              │
-#  46 │ 23.4 C                       │                              │
+#  46 │ 433MHz             [+40dB]   │                     +0dB     │
 #  56 │ 192.168.1.100                          rfmeter.local        │
 #     └──────────────────────────────┴──────────────────────────────┘
+#
+# The frequency and attenuator fields on the info line can be edited
+# from the front panel encoder; the active field is drawn inverted.
 #
 # Gray levels: 15 = reading, 10 = labels, 5 = secondary text/outlines.
 
@@ -101,6 +104,14 @@ class ChannelPane:
         x = HALF_WIDTH - PANE_PAD - len(s) * CHAR_W
         self.display.text(s, self.x0 + x, y, col)
 
+    def _field(self, s, x, y, highlight, col=LABEL):
+        """Draw an editable field; inverted (bright box, dark text) when active."""
+        if highlight:
+            self.display.fill_rect(self.x0 + x - 1, y - 1, len(s) * CHAR_W + 1, CHAR_W + 2, BRIGHT)
+            self.display.text(s, self.x0 + x, y, 0)
+        else:
+            self.display.text(s, self.x0 + x, y, col)
+
     def draw_power_bar(self, power_dbm, x, y, width, height=8,
                        min_dbm=-60, max_dbm=10):
         """Draw a bar graph of power level."""
@@ -115,14 +126,21 @@ class ChannelPane:
             d.fill_rect(self.x0 + x + 1, y + 1, fill, height - 2, BRIGHT)
 
     def update(self, power_value, unit_str, sensor_type=None,
-               temperature=None, attenuator=0.0):
-        """Render this channel's pane into the frame buffer (no show)."""
-        # Header: channel, attenuator, sensor type
+               temperature=None, attenuator=0.0, frequency=None,
+               edit_field=None):
+        """
+        Render this channel's pane into the frame buffer (no show).
+
+        Args:
+            edit_field: None, "freq" or "atten": which field is being
+                        edited from the front panel (drawn inverted)
+        """
+        # Header: channel, head temperature, sensor type
         self._text("CH{}".format(self.channel_num), PANE_PAD, Y_HEADER, BRIGHT)
-        if attenuator:
-            self._text("{:+.0f}dB".format(attenuator), PANE_PAD + 4 * CHAR_W, Y_HEADER, LABEL)
+        if temperature is not None:
+            self._text("{:.1f}C".format(temperature), PANE_PAD + 4 * CHAR_W, Y_HEADER, DIM)
         if sensor_type:
-            self._text_right(sensor_type[:8], Y_HEADER, LABEL)
+            self._text_right(sensor_type[:6], Y_HEADER, LABEL)
         else:
             self._text_right("NO SENSOR", Y_HEADER, DIM)
 
@@ -141,9 +159,13 @@ class ChannelPane:
             x = HALF_WIDTH - PANE_PAD - 4 * BIG_CHAR_W
             self.scaler.draw(self.display, "----", self.x0 + x, Y_READING, BIG_SCALE, DIM)
 
-        # Head temperature
-        if temperature is not None:
-            self._text("{:.1f} C".format(temperature), PANE_PAD, Y_INFO, DIM)
+        # Info line: frequency (left) and external attenuator (right)
+        if frequency is not None:
+            self._field("{:g}MHz".format(frequency), PANE_PAD, Y_INFO,
+                        edit_field == "freq")
+        atten_str = "{:+.0f}dB".format(attenuator)
+        self._field(atten_str, HALF_WIDTH - PANE_PAD - len(atten_str) * CHAR_W, Y_INFO,
+                    edit_field == "atten")
 
 
 class DisplayManager:
@@ -186,14 +208,16 @@ class DisplayManager:
         """Set IP address to show on the status line."""
         self.ip_address = ip
 
-    def _draw_status_line(self):
+    def _draw_status_line(self, locked=False):
         d = self.display
         if self.ip_address:
             d.text(self.ip_address[:15], PANE_PAD, Y_STATUS, LABEL)
         else:
             d.text("DHCP...", PANE_PAD, Y_STATUS, DIM)
-        host = config.MDNS_HOSTNAME + ".local"
-        d.text(host, config.DISPLAY_WIDTH - PANE_PAD - len(host) * CHAR_W, Y_STATUS, DIM)
+        # Right side: hostname, or the remote-lock indicator
+        right = "REMOTE LOCK" if locked else config.MDNS_HOSTNAME + ".local"
+        d.text(right, config.DISPLAY_WIDTH - PANE_PAD - len(right) * CHAR_W, Y_STATUS,
+               LABEL if locked else DIM)
 
     def _draw_divider(self):
         self.display.vline(HALF_WIDTH - 1, 0, Y_STATUS - 2, DIM)
@@ -207,12 +231,14 @@ class DisplayManager:
         d.text("Dual channel, SCPI port {}".format(config.SCPI_PORT), 16, 44, DIM)
         d.show()
 
-    def update_all(self, meter):
+    def update_all(self, meter, edit=None, locked=False):
         """
         Redraw the whole panel from the power meter state.
 
         Args:
             meter: PowerMeter instance
+            edit: (channel, field) being edited from the front panel, or None
+            locked: True to show the remote-lock indicator
         """
         d = self.display
         d.fill(0)
@@ -221,10 +247,12 @@ class DisplayManager:
             if channel is None:
                 continue
             power, unit = channel.get_power()
+            edit_field = edit[1] if edit and edit[0] == ch_num else None
             pane.update(power, unit, channel.sensor_type,
-                        channel.temperature, channel.get_attenuator())
+                        channel.temperature, channel.get_attenuator(),
+                        channel.get_frequency(), edit_field)
         self._draw_divider()
-        self._draw_status_line()
+        self._draw_status_line(locked)
         d.show()
 
     def show_error(self, message):
