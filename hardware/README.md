@@ -190,11 +190,11 @@ AC-grounded through an identical capacitor so both pins see the same
 source impedance and the same ground.
 
 ```
-SMA ──┬──[17.4Ω]──┬──────┬──[C1 1nF]── INP (pin 8)
+SMA ──┬──[17.4Ω]──┬──────┬──[C1 10nF]─ INP (pin 8)
       │           │      │
    [294Ω]      [294Ω]  [52.3Ω]            AD8307
       │           │      │
-     GND         GND    GND ─────[C2 1nF]── INM (pin 1)
+     GND         GND    GND ─────[C2 10nF]─ INM (pin 1)
                          ↑
              one ground point, right here
 ```
@@ -211,12 +211,16 @@ SMA ──┬──[17.4Ω]──┬──────┬──[C1 1nF]── IN
   same point as the termination, ground and supply noise appears on both
   pins equally and cancels. Without C2, INM floats on the internal bias
   and that noise is read as signal.
-- **C1 = C2 = 1nF, C0G, 0603.** The low-frequency corner is set by the
-  series combination of the two capacitors against 1.1kΩ: 1nF gives
-  ~290kHz, far below the 50-500MHz range. 1nF is chosen over the
-  datasheet's 10nF because it stays capacitive well above the 10nF
-  part's self-resonance; the meter is not intended to work in the kHz
-  range.
+- **C1 = C2 = 10nF, C0G, 0603.** This is the datasheet value. The
+  low-frequency corner is set by the series combination of the two
+  capacitors against 1.1kΩ: 10nF gives ~30kHz, far below the 50-500MHz
+  range. A 0603 10nF self-resonates around 65MHz and is inductive above
+  that, but with ~0.6nH of parasitic inductance it is still only ~2Ω at
+  500MHz, in series with the detector's 1.1kΩ. 1nF would work equally
+  well (~3Ω at 50MHz, ~2Ω at 500MHz, corner ~290kHz); the match at the
+  top of the band is set by the AD8307's input capacitance, not by the
+  coupling capacitors. What matters is that C1 and C2 are identical in
+  value, dielectric and footprint.
 - **Match at the top of the band.** The AD8307's ~1.4pF input
   capacitance (≈ -j227Ω at 500MHz) spoils the 50Ω match somewhat. The
   pad helps: a reflection from the detector passes through it twice, so
@@ -704,7 +708,7 @@ have not yet been updated:
 - `sensor_heads/AD8307`: needs the ADS1115, the MCP9808, the 100nF
   output filter capacitor and the ALERT pull-up added; the detector
   output goes to AIN0 instead of RJ45 pin 4. C3/C4 (input coupling)
-  change from 10nF to 1nF C0G. RJ45 wiring changes: pin 1 becomes V+ into
+  stay 10nF but should be C0G. RJ45 wiring changes: pin 1 becomes V+ into
   a 3.3V LDO (plus 10µF and TVS), SCL moves from pin 6 to pin 4, pins 5,
   6 and 7 become GND (R6, the AGND link, goes away), pin 8 goes to GND
   instead of 3V3. The +3V3 and +5V power symbols now mean the head's own

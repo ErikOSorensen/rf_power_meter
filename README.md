@@ -328,7 +328,7 @@ delivers 8V; the head makes a 3.3V rail for the digital parts and, for
 - SMA connector for RF input: Amphenol RF 132289, edge mount (project library `rf_power_meter:SMA_132289`)
 - 3 dB pi attenuator between SMA and detector: 17.4Ω series, 2× 294Ω shunt, thin-film 1% (see `hardware/README.md`)
 - Detector output filter: 100nF from OUT to ground, straight into ADS1115 AIN0 (the AD8307 output is 12.5kΩ, no series resistor needed)
-- Detector input network: 52.3Ω termination, 2× 1nF C0G coupling capacitors on INP and INM (see `hardware/README.md`)
+- Detector input network: 52.3Ω termination, 2× 10nF C0G coupling capacitors on INP and INM (see `hardware/README.md`)
 - Decoupling capacitors (100nF on each IC supply pin)
 - I2C pull-up resistors (2× 4.7kΩ to the head's 3V3)
 - 10kΩ pull-up on ADS1115 ALERT/RDY (unused, keeps the open-drain output defined)
