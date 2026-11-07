@@ -14,7 +14,7 @@ standard KiCad libraries, or that we want pinned to a specific part.
 | Symbol | Footprint | 3D model | Part |
 |--------|-----------|----------|------|
 | `SMA_132289` | `SMA_Amphenol_132289_EdgeMount` | `SMA_Amphenol_132289_EdgeMount.step` | Amphenol RF 132289, SMA jack, 50Ω, PCB edge mount. RF input on every head. |
-| `RJ45_RJHSE-5380` | `RJ45_Amphenol_RJHSE5380` | `RJ45_Amphenol_RJHSE538X.step` (see note) | Amphenol RJHSE-5380, RJ45 8P8C jack, shielded, through hole, no magnetics, no LEDs. Main-unit ports. |
+| `RJ45_RJHSE-5380` | `RJ45_Amphenol_RJHSE5380` | `RJ45_Amphenol_RJHSE5380.step` | Amphenol RJHSE-5380, RJ45 8P8C jack, shielded, through hole, no magnetics, no LEDs. Main-unit ports. |
 | `RJ45_WE-615108150221R` | `RJ45_Wuerth_615108150221R_MidMount` | none yet | Würth WR-MJ 615108150221R, RJ45 8P8C, mid-mount in a board-edge cutout, shielded, tab down, THR, no magnetics, no LEDs. Sensor heads. Footprint drawn from the datasheet (not vendor-supplied); verify against a sample before ordering boards. |
 
 **SMA footprint note:** the board edge belongs at x = +2.54 mm in the
@@ -23,11 +23,11 @@ footprint's frame (the F.Fab line where the slotted body ends and the
 the edge and the enclosure end plate; see the enclosure section in
 `../README.md`.
 
-**RJ45 model note:** KiCad has no model for the LED-less RJHSE-5380, only
-for the RJHSE-538X LED variants. The housing and pin positions are the
-same, so the 538X model is used as a stand-in. It shows two LED windows
-the real part does not have. Replace it with Amphenol's own STEP for the
-RJHSE-5380 if exact appearance matters.
+**RJ45 model note:** the STEP is Amphenol's own model for the LED-less
+RJHSE-5380 (KiCad only ships the RJHSE-538X LED variants). Its origin is
+the centre between the two mounting pegs with the body lying flat, so the
+footprint places it with offset (3.56, 2.54, 0) mm and rotation
+(-90, 0, 180) degrees to land on the pads, which have pin 1 at the origin.
 
 **Mid-mount RJ45 note:** the shield pads sit flush against the board
 cutout, exactly as the Würth drawing specifies, so KiCad's default

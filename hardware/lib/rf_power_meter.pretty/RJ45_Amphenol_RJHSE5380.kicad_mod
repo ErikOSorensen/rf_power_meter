@@ -341,15 +341,15 @@
 		(uuid "383a7a8e-8ff3-4ce8-8722-8c132c260cc0")
 	)
 	(embedded_fonts no)
-	(model "${RFPM_LIB}/3dmodels/RJ45_Amphenol_RJHSE538X.step"
+	(model "${RFPM_LIB}/3dmodels/RJ45_Amphenol_RJHSE5380.step"
 		(offset
-			(xyz 0 0 0)
+			(xyz 3.56 2.54 0)
 		)
 		(scale
 			(xyz 1 1 1)
 		)
 		(rotate
-			(xyz 0 0 0)
+			(xyz -90 0 180)
 		)
 	)
 )
