@@ -638,7 +638,7 @@ reads it on a GPIO: LOW means a head is connected.
                          │
                       [10kΩ]
                          │
-RJ45 Pin 8 (DET) ────────┼────────┬──── GP2/GP3  (low = head present)
+RJ45 Pin 8 (DET) ────────┼────────┬──── GP4/GP5  (low = head present)
                          ┴        │
                         ───       │
                          │        │
