@@ -34,6 +34,13 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 - **SCPI control**: Standard SCPI commands over TCP port 5025.
 - **mDNS discovery**: Find the meter as `rfmeter.local`.
 
+## Display
+
+![Main screen: two channels, each with name, sensor type, head temperature, frequency and pad on the left and the reading in dBm on the right](docs/display_main.png)
+
+The main screen, rendered at 3x by `python3 tests/test_screen.py docs/display_main.png 3`
+with the firmware's own layout code (`src/display/layout.py`).
+
 ## Repository Layout
 
 | Directory | Contents |
@@ -41,6 +48,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 | `src/` | MicroPython firmware. Its contents mirror the Pico's filesystem root: everything in it, and nothing else, is copied to the Pico. |
 | `tools/` | Desktop-only Python scripts (font generation, calibration, test utilities). Never copied to the Pico. See `tools/README.md`. `tools/sim/` holds desktop stand-ins for MicroPython modules (`framebuf`, `micropython`). |
 | `tests/` | Tests that run both on the Pico (`mpremote run`) and on the desktop. `tests/test_screen.py` renders the display screens to PNG. |
+| `docs/` | Images for the documentation, such as the display render above. |
 | `hardware/` | KiCad projects and the project-local KiCad library. See `hardware/README.md`. |
 
 ### Deploying the Firmware
