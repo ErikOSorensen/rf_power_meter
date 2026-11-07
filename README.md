@@ -15,7 +15,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
          │              │              │              │
          ▼              ▼              ▼              ▼
 ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│   sensors/  │ │  display/   │ │  network/   │ │    scpi/    │
+│   sensors/  │ │  display/   │ │    net/     │ │    scpi/    │
 │             │ │             │ │             │ │             │
 │ Head ADC,   │ │ 256x64 OLED │ │ Ethernet &  │ │  Command    │
 │ temp, EEPROM│ │ both chans  │ │ TCP server  │ │  parsing    │
@@ -29,12 +29,33 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 - **Self-contained sensor heads**: Each head carries its detector, 16-bit ADC, temperature sensor and EEPROM. Only power and I2C travel over the cable.
 - **One I2C bus per head**: Each sensor head hangs on its own Pico I2C controller (I2C0 for channel 1, I2C1 for channel 2), so heads are interchangeable and no multiplexer is needed.
 - **Hot-swappable sensors**: Sensors are automatically detected at startup and on plug-in via a presence detect line.
-- **Single 256x64 grayscale OLED**: An SSD1322 panel over SPI shows both channels side by side.
+- **Single 256x64 grayscale OLED**: An SSD1322 panel over SPI shows both channels, one row each.
 - **Front panel encoder**: A rotary encoder with push switch sets the frequency and external attenuator of each channel. SCPI writes override it, and `SYSTem:KLOCk` can lock it out.
 - **SCPI control**: Standard SCPI commands over TCP port 5025.
 - **mDNS discovery**: Find the meter as `rfmeter.local`.
 
+## Repository Layout
+
+| Directory | Contents |
+|-----------|----------|
+| `src/` | MicroPython firmware. Its contents mirror the Pico's filesystem root: everything in it, and nothing else, is copied to the Pico. |
+| `tools/` | Desktop-only Python scripts (font generation, calibration, test utilities). Never copied to the Pico. See `tools/README.md`. `tools/sim/` holds desktop stand-ins for MicroPython modules (`framebuf`, `micropython`). |
+| `tests/` | Tests that run both on the Pico (`mpremote run`) and on the desktop. `tests/test_screen.py` renders the display screens to PNG. |
+| `hardware/` | KiCad projects and the project-local KiCad library. See `hardware/README.md`. |
+
+### Deploying the Firmware
+
+With [`mpremote`](https://docs.micropython.org/en/latest/reference/mpremote.html):
+
+```
+cd src
+mpremote cp -r . :
+mpremote reset
+```
+
 ## File Responsibilities
+
+All paths below are relative to `src/`.
 
 ### Core
 
@@ -58,7 +79,9 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 | File | Purpose |
 |------|---------|
 | `ssd1322.py` | Low-level driver for the SSD1322 256x64 4-bit grayscale OLED (4-wire SPI). Frame buffer is `framebuf.GS4_HMSB`, which matches the controller's RAM layout. |
-| `power_display.py` | Power meter UI rendering. Splits the panel into two panes, one per channel: large reading, unit, bar graph, sensor type, head temperature; IP address and hostname on a shared status line. |
+| `bitmapfont.py` | Draws the generated bitmap fonts in `fonts/` (B612 Bold 30 px, Regular 12 px and 9 px; 4-bit antialiased, tabular digits). Regenerate with `tools/fonts/make_fonts.py`. |
+| `layout.py` | Screen layout, hardware-free so it also runs on the desktop. One 32 px row per channel: channel name with sensor type and head temperature, frequency and pad (editable, inverted while editing), the reading in 30 px B612 Bold right-aligned at a fixed position, and the unit. Also the startup (IP address, hostname), error and remote-lock screens. |
+| `power_display.py` | `DisplayManager`: owns the panel, reads the meter state and draws it with `layout.py`. Holds the startup screen with the IP address for 3 s after DHCP succeeds. |
 
 ### Front Panel (`ui/`)
 
@@ -67,7 +90,7 @@ Dual-channel RF power meter using Raspberry Pi Pico with W5500 Ethernet, featuri
 | `encoder.py` | Rotary encoder quadrature decoder and push button, interrupt driven. Expects hardware-debounced inputs. |
 | `front_panel.py` | Edit-mode state machine: short press cycles CH1 frequency → CH1 attenuator → CH2 frequency → CH2 attenuator → back to measurement; rotation changes the highlighted value; 5 s idle timeout; remote lock. |
 
-### Network (`network/`)
+### Network (`net/`)
 
 | File | Purpose |
 |------|---------|
@@ -218,7 +241,7 @@ over -40 to +85 °C, AD8318 somewhat more). Measuring the temperature
 at the detector allows this drift to be characterised per head and
 compensated in firmware. The reading is available via
 `MEASure:TEMPerature[1|2]?`. Temperature compensation coefficients are
-not yet stored in the EEPROM format (see format version in `eeprom.py`).
+not yet stored in the EEPROM format (see format version in `src/sensors/eeprom.py`).
 
 ### Pico Pin Assignments
 
@@ -392,8 +415,9 @@ analog chain moved to the heads, the main unit is purely digital.
 - 3.3V logic (VDDIO 1.65-3.5V), so no level shifting
 - A full frame is 8 KB; at 10 MHz a refresh takes about 7 ms. The
   firmware redraws at 5 Hz
-- Both channels share the panel: channel 1 on the left half, channel 2
-  on the right, with IP address and mDNS name on a status line
+- Both channels share the panel: channel 1 on the top row, channel 2
+  on the bottom row. The IP address and mDNS name are on the startup
+  screen, which stays up for 3 s after DHCP succeeds
 
 **Power Supply Requirements:**
 - 12V DC input from a 1A AC/DC adapter (2.1mm jack, centre positive)
@@ -441,7 +465,7 @@ only.
   the display never shows a stale highlighted value. The last writer
   wins.
 - **Remote lock:** `SYSTem:KLOCk ON` disables the encoder and shows
-  REMOTE LOCK on the status line. The lock is not stored; the instrument
+  RMT in the top right corner of the display. The lock is not stored; the instrument
   always powers up unlocked.
 
 ## SCPI Command Reference

@@ -9,9 +9,9 @@ import config
 from sensors.power_sensor import PowerMeter
 from display.power_display import DisplayManager
 from ui.front_panel import FrontPanel
-from network.w5500 import get_network, init_network_async
-from network.tcp_server import TCPServer
-from network.mdns import MDNSResponder
+from net.w5500 import get_network, init_network_async
+from net.tcp_server import TCPServer
+from net.mdns import MDNSResponder
 from scpi.commands import create_scpi_handler
 
 

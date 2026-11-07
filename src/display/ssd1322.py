@@ -183,8 +183,11 @@ class SSD1322:
     def fill_rect(self, x, y, w, h, col):
         self.framebuf.fill_rect(x, y, w, h, col)
 
-    def blit(self, fbuf, x, y, key=-1):
-        self.framebuf.blit(fbuf, x, y, key)
+    def blit(self, fbuf, x, y, key=-1, palette=None):
+        if palette is None:
+            self.framebuf.blit(fbuf, x, y, key)
+        else:
+            self.framebuf.blit(fbuf, x, y, key, palette)
 
     def show(self):
         """Send the whole frame buffer to the panel (8 KB for 256x64)."""
