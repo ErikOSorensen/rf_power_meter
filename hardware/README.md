@@ -842,6 +842,9 @@ open items:
     (VCC, +3V3: 0.5 mm, with a 0.2 mm neck-down allowed inside the U3,
     U4 and U6 courtyards); custom rules in `AD8307.kicad_dru`.
     Silkscreen carries the I2C address table and the head label on the
-    top and the RJ45 pinout on the bottom. Remaining DRC: one starved
+    top and the RJ45 pinout on the bottom. Six beaded wire-loop test
+    points (TestPoint_Loop_D1.80mm_Drill1.0mm_Beaded): TP1 sens_out
+    (AD8307 OUT / ADS1115 AIN0), TP2 +3V3, TP3 VCC, TP4 SDA, TP5 SCL,
+    TP6 GND. Remaining DRC: one starved
     thermal (J2 pin 5), one clearance and one hole-clearance item, the
     J1/J2 edge items, and one unrouted connection.

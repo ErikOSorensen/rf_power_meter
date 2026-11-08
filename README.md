@@ -340,6 +340,12 @@ table (ADS1115 0x48, MCP9808 0x18, AT24CS04 0x50 lower / 0x51 upper) and
 the head label on the top side, and the RJ45 pinout on the bottom side,
 so a head can be checked on the bench without this document.
 
+**Test points:** six beaded wire loops (TestPoint_Loop_D1.80mm, 1.0 mm
+hole) for bench checks: TP1 detector output (AD8307 OUT / ADS1115
+AIN0), TP2 +3V3, TP3 VCC (the 8 V from the cable), TP4 SDA, TP5 SCL,
+TP6 GND. Clip a scope ground to TP6 and the detector output can be
+watched live while the ADC reads it.
+
 **Detector Supply Voltage Reference:**
 
 | Sensor | Supply | Head rail for detector | Max output | Fits ADS1115 at 3.3V? |

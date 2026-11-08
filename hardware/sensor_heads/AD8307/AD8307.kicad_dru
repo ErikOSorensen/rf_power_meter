@@ -27,6 +27,6 @@
 
 # Allow narrower power tracks where they enter fine-pitch packages.
 (rule power_neckdown
-  (condition "A.NetClass == 'Power' && (A.intersectsCourtyard('U3') || A.intersectsCourtyard('U4') || A.intersectsCourtyard('U6'))")
+  (condition "A.NetClass == 'Power' && (A.intersectsCourtyard('U3') || A.intersectsCourtyard('U4') || A.intersectsCourtyard('U1'))")
   (constraint track_width (min 0.2mm) (opt 0.3mm)))
 
