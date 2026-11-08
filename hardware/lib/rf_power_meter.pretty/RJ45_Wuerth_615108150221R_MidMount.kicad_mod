@@ -349,4 +349,15 @@
 		(uuid "bc1737c4-839c-4092-9814-83b3afb793ad")
 	)
 	(embedded_fonts no)
+	(model "${RFPM_LIB}/3dmodels/RJ45_Wuerth_615108150221R_MidMount.step"
+		(offset
+			(xyz 0 -7.22 2.25)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 180 0)
+		)
+	)
 )

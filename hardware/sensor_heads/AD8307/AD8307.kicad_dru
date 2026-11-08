@@ -1,0 +1,18 @@
+(version 1)
+
+# Keep copper pours away from RF traces. A pour at the default 0.3 mm
+# clearance turns the microstrip into a coplanar line and lowers Z0.
+# Three times the dielectric height makes the pour's effect negligible.
+(rule rf_pour_clearance
+  (condition "A.NetClass == 'RF' && B.Type == 'Zone'")
+  (constraint clearance (min 0.6mm)))
+
+# RF nets stay on the top layer over the L2 ground. No vias.
+(rule rf_no_vias
+  (condition "A.NetClass == 'RF'")
+  (constraint via_count (max 0)))
+
+# Enforce the microstrip width even if someone drags a track.
+(rule rf_width
+  (condition "A.NetClass == 'RF'")
+  (constraint track_width (min 0.35mm) (max 0.35mm)))
