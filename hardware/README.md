@@ -46,9 +46,9 @@ RJ45 pin 1 ──┬───┤ 5V LDO   ├──┬──── 5V: detector 
 
   | Pin | Capacitor | Notes |
   |-----|-----------|-------|
-  | VIN | 1µF, 25V, 0603 X7R | Right at the pin. The 10µF/TVS at the RJ45 is the bulk; if it sits within ~1cm of the regulator it can serve as the input capacitor alone. |
-  | VOUT | 10µF/25V tantalum (C10, as drawn) or 10µF 10V X7R | Datasheet minimum is 2.2µF; 10µF stiffens the rail against the AD8307's signal-dependent supply current. Up to 100µF is allowed. |
-  | BYPASS | 10nF C0G | Cuts bandgap noise by ~10×. Slows start-up to a few ms, which is irrelevant here. |
+  | VIN | 1µF, 25V X7R (C9) | Right at the pin. The 10µF/TVS at the RJ45 is the bulk; if it sits within ~1cm of the regulator it can serve as the input capacitor alone. |
+  | VOUT | 10µF/25V tantalum (C11, as drawn) or 10µF 10V X7R | Datasheet minimum is 2.2µF; 10µF stiffens the rail against the AD8307's signal-dependent supply current. Up to 100µF is allowed. |
+  | BYPASS | 10nF C0G (C10) | Cuts bandgap noise by ~10×. Slows start-up to a few ms, which is irrelevant here. |
   | ON/OFF | tie to VIN | Must not float. |
 
   MIC5205-3.3 is a pin-compatible fallback with the same capacitor
@@ -57,7 +57,7 @@ RJ45 pin 1 ──┬───┤ 5V LDO   ├──┬──── 5V: detector 
   The 3.3V LDO then takes its input from the 5V rail, so the hot part is
   the SOT-223 and the 3.3V regulator sees only ~1.7V across it.
 - **3.3V-detector heads:** omit the 5V LDO, feed the 3.3V LDO from V+.
-- **Input protection:** 10µF/25V tantalum (C7; a 25V X7R ceramic also works) and a
+- **Input protection:** 10µF/25V tantalum (C8; a 25V X7R ceramic also works) and a
   12V TVS (SMF12A, D2) on V+ at the RJ45. The RJ45 is keyed, so reverse polarity
   protection is optional; a Schottky in series costs 0.3V of headroom if
   wanted.
@@ -826,17 +826,22 @@ open items:
     unused) and the 74HC14 debounce (10nF/10nF/470nF) match the sections
     above.
 - `sensor_heads/AD8307` (schematic complete; 4-layer layout in progress):
-  - Schematic matches the sections above: LP2985-3.3 (U4) with 1µF in,
-    10nF bypass and 10µF/25V tantalum out; 10µF/25V tantalum (C7) and
-    SMF12A (D2) on V+; AD8307 with the 3 dB pad (17.6Ω/2× 294Ω), 52.3Ω
-    termination and 10nF coupling; ADS1115 (ADDR and AIN1-AIN3 → GND,
-    10kΩ on ALERT/RDY, 100nF on AIN0); MCP9808 MSOP (A0-A2 → GND);
-    AT24CS04-SSHM (A1, A2, WP → GND); 4.7kΩ pull-ups; ESDAVLC6-2BLY (D1)
-    on SDA/SCL.
-  - C9 (the 10nF LP2985 bypass) carries a resistor footprint (R_0805);
-    change it to a capacitor footprint.
+  - References: U1 AT24CS04-SSHM, U2 MCP9808, U3 AD8307, U4 ADS1115,
+    U5 LP2985-3.3, J1 SMA, J2 RJ45, D1 ESDAVLC6-2BLY, D2 SMF12A.
+  - Schematic matches the sections above: LP2985-3.3 (U5) with 1µF (C9)
+    in, 10nF (C10) bypass and 10µF/25V tantalum (C11) out; 10µF/25V
+    tantalum (C8) and SMF12A (D2) on V+; AD8307 with the 3 dB pad
+    (17.6Ω/2× 294Ω), 52.3Ω termination and 10nF coupling; ADS1115 (ADDR
+    and AIN1-AIN3 → GND, 10kΩ on ALERT/RDY, 100nF on AIN0); MCP9808 MSOP
+    (A0-A2 → GND); AT24CS04-SSHM (A1, A2, WP → GND); 4.7kΩ pull-ups;
+    ESDAVLC6-2BLY (D1) on SDA/SCL.
   - Layout: 57.6 × 39.0 mm outline with the RJ45 notch, SMA and RJ45 on
-    the board centreline, RF tracks at 0.35 mm, zones filled. Open: 7
-    unrouted connections, 9 starved thermals, a U2/C5 courtyard overlap,
-    and the expected copper-to-edge DRC items on the J1 and J2 pads
-    (exclude them).
+    the board centreline, GND zone on F.Cu, In1.Cu and B.Cu, +3V3 zone
+    on In2.Cu, rule area voiding In1.Cu under the SMA pin pad. Net
+    classes: RF (0.35 mm, no vias, 0.6 mm pour clearance) and power
+    (VCC, +3V3: 0.5 mm, with a 0.2 mm neck-down allowed inside the U3,
+    U4 and U6 courtyards); custom rules in `AD8307.kicad_dru`.
+    Silkscreen carries the I2C address table and the head label on the
+    top and the RJ45 pinout on the bottom. Remaining DRC: one starved
+    thermal (J2 pin 5), one clearance and one hole-clearance item, the
+    J1/J2 edge items, and one unrouted connection.

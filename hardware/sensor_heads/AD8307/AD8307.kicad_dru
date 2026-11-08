@@ -7,12 +7,26 @@
   (condition "A.NetClass == 'RF' && B.Type == 'Zone'")
   (constraint clearance (min 0.6mm)))
 
-# RF nets stay on the top layer over the L2 ground. No vias.
-(rule rf_no_vias
+# RF nets stay on the top layer over the L2 ground: no vias, and the
+# microstrip width is fixed even if someone drags a track.
+(rule rf_nets
   (condition "A.NetClass == 'RF'")
-  (constraint via_count (max 0)))
-
-# Enforce the microstrip width even if someone drags a track.
-(rule rf_width
-  (condition "A.NetClass == 'RF'")
+  (constraint via_count (max 0))
   (constraint track_width (min 0.35mm) (max 0.35mm)))
+
+# Connector pads that sit on the board edge by design.
+# Würth mid-mount RJ45: the shield pads are flush with the notch wall.
+(rule rj45_shield_pads_on_notch
+  (condition "A.memberOfFootprint('J2') && A.Pad_Number == 'SH'")
+  (constraint edge_clearance (min 0mm)))
+
+# Amphenol edge-mount SMA: all pads straddle the board edge.
+(rule sma_pads_on_edge
+  (condition "A.memberOfFootprint('J1')")
+  (constraint edge_clearance (min 0mm)))
+
+# Allow narrower power tracks where they enter fine-pitch packages.
+(rule power_neckdown
+  (condition "A.NetClass == 'Power' && (A.intersectsCourtyard('U3') || A.intersectsCourtyard('U4') || A.intersectsCourtyard('U6'))")
+  (constraint track_width (min 0.2mm) (opt 0.3mm)))
+

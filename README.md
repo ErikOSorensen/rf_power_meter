@@ -335,6 +335,11 @@ delivers 8V; the head makes a 3.3V rail for the digital parts and, for
 - ESD protection (1× ESDAVLC6-2BLY for I2C lines)
 - RF detector support components (per datasheet)
 
+**Board markings:** the head PCB silkscreen carries the I2C address
+table (ADS1115 0x48, MCP9808 0x18, AT24CS04 0x50 lower / 0x51 upper) and
+the head label on the top side, and the RJ45 pinout on the bottom side,
+so a head can be checked on the bench without this document.
+
 **Detector Supply Voltage Reference:**
 
 | Sensor | Supply | Head rail for detector | Max output | Fits ADS1115 at 3.3V? |
