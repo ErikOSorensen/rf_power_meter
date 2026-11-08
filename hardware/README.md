@@ -33,23 +33,36 @@ RJ45 pin 1 ──┬───┤ 5V LDO   ├──┬──── 5V: detector 
           [10µF] └──────────┘  │   ┌──────────┐
              │                 └───┤ 3.3V LDO ├──┬──── 3V3: ADS1115, MCP9808,
           [TVS 12V]                │ SOT-23-5 │  │           EEPROM, pull-ups,
-             │                     └──────────┘ [1µF]        3.3V detector
+             │                     └──────────┘ [10µF]       3.3V detector
             GND                                  │
                                                 GND
 ```
 
-- **3.3V LDO:** low-noise, 16V-input, 150mA class. LP2985-33 or MIC5205-3.3
-  (SOT-23-5). This rail feeds the ADC, so noise matters more than
-  efficiency; a buck converter is not appropriate here.
+- **3.3V LDO: LP2985-33 (SOT-23-5).** Low-noise, 16V input, 150mA. This
+  rail feeds the ADC, so noise matters more than efficiency; a buck
+  converter is not appropriate here. Capacitors per the datasheet, all
+  ceramic (the current LP2985 is stable with ceramics, ESR window ≈ 5mΩ
+  to 3Ω):
+
+  | Pin | Capacitor | Notes |
+  |-----|-----------|-------|
+  | VIN | 1µF, 25V, 0603 X7R | Right at the pin. The 10µF/TVS at the RJ45 is the bulk; if it sits within ~1cm of the regulator it can serve as the input capacitor alone. |
+  | VOUT | 10µF/25V tantalum (C10, as drawn) or 10µF 10V X7R | Datasheet minimum is 2.2µF; 10µF stiffens the rail against the AD8307's signal-dependent supply current. Up to 100µF is allowed. |
+  | BYPASS | 10nF C0G | Cuts bandgap noise by ~10×. Slows start-up to a few ms, which is irrelevant here. |
+  | ON/OFF | tie to VIN | Must not float. |
+
+  MIC5205-3.3 is a pin-compatible fallback with the same capacitor
+  values.
 - **5V LDO (5V-detector heads only):** AP7361C-50 or LD1117S50 in SOT-223.
   The 3.3V LDO then takes its input from the 5V rail, so the hot part is
   the SOT-223 and the 3.3V regulator sees only ~1.7V across it.
 - **3.3V-detector heads:** omit the 5V LDO, feed the 3.3V LDO from V+.
-- **Input protection:** 10µF ceramic (25V rated) and a 12V TVS (SMF12A or
-  similar) on V+ at the RJ45. The RJ45 is keyed, so reverse polarity
+- **Input protection:** 10µF/25V tantalum (C7; a 25V X7R ceramic also works) and a
+  12V TVS (SMF12A, D2) on V+ at the RJ45. The RJ45 is keyed, so reverse polarity
   protection is optional; a Schottky in series costs 0.3V of headroom if
   wanted.
-- **Outputs:** 1µF + 100nF on each LDO output, plus 100nF at every IC.
+- **Outputs:** 10µF on the 3.3V LDO output (see above), 10µF on the 5V
+  LDO output, plus 100nF at every IC.
 
 **Dissipation at 8V input:**
 
@@ -106,7 +119,7 @@ counts across the signal range.
 | ALERT/RDY | 10kΩ pull-up to 3.3V, otherwise unconnected |
 | AIN0 | Detector output (100nF to ground at the pin) |
 | AIN1 | Detector ground |
-| AIN2, AIN3 | Unconnected (spare for a two-detector head) |
+| AIN2, AIN3 | GND (unused inputs tied low; a two-detector head would free them) |
 
 The firmware puts the ADC in continuous conversion mode (128 SPS, AIN0-AIN1,
 ±4.096V) when the head is detected and then just reads the conversion
@@ -128,10 +141,14 @@ resolution (0.0625°C) is used.
 
 ## Sensor Head: EEPROM
 
-AT24C02 (SOIC-8) or AT24CS04 (DFN-8, adds a factory serial number).
-Address pins A1 and A2 must be tied to GND for address 0x50. Do not leave
-them floating. WP can be tied to GND (write enabled; calibration is saved
-from the SCPI interface).
+AT24CS04-SSHM (SOIC-8, 4 kbit, with a factory 128-bit serial number).
+A1 and A2 are tied to GND for address 0x50 (0x51 answers for the upper
+256 bytes; the serial number block answers at 0x58, word addresses
+0x80-0x8F). Do not leave the address pins floating: they have no
+internal pull-downs. WP (pin 7) is tied to GND, write enabled, since
+calibration is saved from the SCPI interface. Pin 1 (NC) is left open.
+The UDFN variant (AT24CS04-MAHM) has the same pinout plus an exposed
+pad, which may be grounded or left floating.
 
 ## Sensor Head: RF Input
 
@@ -147,16 +164,16 @@ keep the 50Ω trace to the detector short.
 A 3 dB pi attenuator sits between the SMA and the detector input network:
 
 ```
-SMA ──┬──[17.4Ω]──┬──── to 52.3Ω termination / coupling caps / detector
+SMA ──┬──[17.6Ω]──┬──── to 52.3Ω termination / coupling caps / detector
       │           │
    [294Ω]      [294Ω]
       │           │
      GND         GND
 ```
 
-| Position | Ideal | E96 value | Resulting attenuation |
+| Position | Ideal | Chosen value | Resulting attenuation |
 |----------|-------|-----------|------------------------|
-| Series | 17.61Ω | 17.4Ω | 3.0 dB, return loss > 30 dB |
+| Series | 17.61Ω | 17.6Ω (R2 as drawn, E192; 17.4Ω E96 is equally fine) | 3.0 dB, return loss > 30 dB |
 | Shunt (×2) | 292.4Ω | 294Ω | |
 
 - **Why:** The pad presents the SMA with a stable 50Ω regardless of the
@@ -190,7 +207,7 @@ AC-grounded through an identical capacitor so both pins see the same
 source impedance and the same ground.
 
 ```
-SMA ──┬──[17.4Ω]──┬──────┬──[C1 10nF]─ INP (pin 8)
+SMA ──┬──[17.6Ω]──┬──────┬──[C1 10nF]─ INP (pin 8)
       │           │      │
    [294Ω]      [294Ω]  [52.3Ω]            AD8307
       │           │      │
@@ -246,7 +263,9 @@ height. Symbol `rf_power_meter:RJ45_RJHSE-5380`, footprint
 
 **Sensor heads: Würth 615108150221R (WR-MJ mid-mount, tab down).**
 The jack body drops through a cutout in the board edge, so it stands
-only 10.65 mm above the board top and 3.25 mm below it. This is what
+low above the board (10.65 mm per the datasheet figures used in the
+enclosure budget below; Würth's STEP model shows only 7.5 mm) and about
+3 mm below it. This is what
 makes the head fit the Hammond 1455D enclosure (see below). Symbol
 `rf_power_meter:RJ45_WE-615108150221R`, footprint
 `rf_power_meter:RJ45_Wuerth_615108150221R_MidMount`.
@@ -260,13 +279,13 @@ two Ø1.8 mm board-guide holes, +y toward the board edge):
 | Board guides | 2 × Ø1.8 non-plated holes, 11.9 mm apart |
 | Shield clips (SH) | 2 × Ø1.2 plated holes, 16.8 mm apart, 2.05 × 3.63 mm pads |
 | Board cutout | 14.75 mm wide, 11.28 mm deep from the board edge; inner end 2.92 mm from the guide holes |
-| Front face | protrudes ~1.1 mm beyond the board edge |
+| Front face | protrudes ~1.1 mm beyond the board edge per the datasheet drawing; the vendor STEP shows 2.3 mm (see `lib/README.md`) |
 | Reflow | THR (pin-in-paste); stencil openings 1.7 × 2.1 mm per signal pin, 120 µm stencil |
 
 The footprint carries the cutout on `Edge.Cuts` and a reference line for
-the board edge on `Dwgs.User`; align the board outline to that line. No
-3D model is available in the project library yet; Würth supplies one on
-request from the product page.
+the board edge on `Dwgs.User`; align the board outline to that line. Würth's
+STEP model is in `lib/3dmodels/` and attached to the footprint; the
+placement transform is documented in `lib/README.md`.
 
 The shield pads (SH) go to GND at the connector on both boards.
 
@@ -363,33 +382,90 @@ be bonded to the enclosure, rely on the end-plate screw threads or
 remove anodising at a contact point; do not assume the panel cutout
 grounds the connector.
 
+## Sensor Head PCB: Dimensions and Stack-up
+
+From the enclosure budget above:
+
+| Item | Value | Why |
+|------|-------|-----|
+| Length | 57.6 mm | 60.0 mm between end plate inner faces, minus the 1.65 mm SMA flange, 0.5 mm extrusion tolerance and 0.25 mm clearance |
+| Width | 39.0 mm | Slot to slot is 39.5 mm; Hammond designs the extrusion for a 39 mm board, 0.25 mm per side |
+| Thickness | 1.6 mm | Slots are 1.8 mm wide. The Amphenol edge-mount SMA and the Würth mid-mount RJ45 are both specified for 1.6 mm boards |
+| Slot | second from the bottom | See "Which PCB slot" |
+| Corners | square along the long edges | The edges ride in the slots for the full length |
+
+Keep-outs:
+
+- **Long edges:** ~1.5 mm of each edge sits inside the slot. No
+  components there, and no copper either: the anodising is thin at the
+  slot and a scratched edge could short to the box.
+- **SMA end:** the board edge is the footprint's F.Fab line, pads
+  2.54 mm inboard. Nothing may extend past the edge; the flange sits
+  between edge and plate.
+- **RJ45 end:** only the Würth jack's face (1.13 mm) protrudes past the
+  edge.
+- **Height:** top side up to ~14 mm (only the RJ45 approaches this),
+  underside up to ~3 mm (SMD passives are fine, nothing tall).
+
+### Four layers
+
+The head is built as a **4-layer board**, standard 1.6 mm stack-up,
+layer 2 solid ground, layer 3 ground (or 3.3V), all routing on layers
+1 and 4. At 500 MHz the wavelength in FR4 is ~300 mm and the RF path
+from SMA pad to AD8307 pin is under 10 mm, so transmission-line effects
+are small either way; the reasons for four layers are elsewhere:
+
+- **An unbroken ground under everything.** On a 39 × 58 mm two-layer
+  board with five ICs and I2C routed around, some traces end up on the
+  bottom and each one slots the ground. With four layers the plane
+  under the ADC, the detector's COM pin and the input network stays
+  whole without policing.
+- **A real 50Ω trace.** With ~0.2 mm prepreg between layers 1 and 2 a
+  50Ω microstrip is ~0.35 mm wide, matching an 0603 pad. On 1.6 mm
+  two-layer it is ~2.9 mm, impossible in a 10 mm run full of 0603
+  parts. The two-layer alternative (a ~0.5 mm, ~100Ω trace, ~12
+  electrical degrees at 500 MHz) gives ~16 dB return loss and ~0.1 dB
+  of ripple at the detector, halved at the SMA by the pad and absorbed
+  by the per-frequency calibration, so it would work, but it is a
+  compromise the extra layers remove for a few euros per batch.
+- **Separated return currents.** I2C and ADC digital edges return on
+  the plane under their own traces, away from the input network, with
+  no via fences needed.
+
+If a head is ever made on two layers: keep the entire bottom layer
+under the RF section as unbroken ground, route I2C only on the top, and
+keep the SMA-to-C1 run under 5 mm.
+
 ## Main Unit: Power Input and Port Protection
 
 The main unit runs from a 12V, 1A AC/DC adapter. Three regulators:
 
 ```
-                  ┌────────────┐
-12V DC jack ──┬───┤ LM317M     ├──┬──[polyfuse 0.2A]──┬──[TVS 12V]── RJ45 #1 pin 1 (V+)
-              │   │ set to 8V  │  │                   │
-          [100µF] └────────────┘  └──[polyfuse 0.2A]──┼──[TVS 12V]── RJ45 #2 pin 1 (V+)
-          [TVS 15V]                                  GND
-              │   ┌─────────────┐
-              └───┤ 5V buck     ├──┬── W5500-EVB-Pico VSYS (RP2040 + W5500)
-                  │ module, 1A  │  │   ┌───────────┐
-                  └─────────────┘  └───┤ 3.3V LDO  ├──── SSD1322 module
-                                       │ SOT-223   │
-                                       └───────────┘
+                            ┌────────────┐
+12V ──[SS14 D5]──┬──────────┤ LM317      ├──┬──[SMF12A D2]── RJ45 #1 pin 1 (V+)
+ screw terminal  │          │ SOT-223 8V │  │
+ J5          [2×100µF]      └────────────┘  └──[SMF12A D3]── RJ45 #2 pin 1 (V+)
+             [1µF] [100nF]
+                 │          ┌──────────────┐
+                 └──────────┤ R-78C5.0-1.0 ├──┬──[SS14 D1]── W5500-EVB-Pico VSYS
+                            │ 5V buck, 1A  │  │   ┌─────────────┐
+                            └──────────────┘  └───┤ AP7361C-33  ├──── SSD1322 module
+                                                  │ SOT-223     │     (3.3V, J1 pin 2)
+                                                  └─────────────┘
 ```
 
-- **Input:** 12V DC, 2.1mm jack, centre positive. Add a 100µF bulk
-  capacitor and a 15V TVS (SMBJ15A) at the jack; a 12V adapter can sit
-  at 12.6V, too close to a 12V part. A series Schottky or P-FET for
-  reverse polarity is optional.
-- **Head rail (LM317M, 8V):** an LM317MBTG (TO-220, 500mA, adjustable)
-  set to 8V feeds both RJ45 ports:
+- **Input:** 12V DC on a 2-pole 5.08 mm screw terminal (J5, Phoenix
+  MKDS 1,5/2). A series SS14 Schottky (D5) gives reverse-polarity
+  protection at the cost of ~0.35V. Bulk capacitance is 2× 100µF/25V
+  electrolytic (C8, C10) plus 1µF tantalum (C9) and 100nF (C4). No input
+  TVS is fitted in the current schematic; a 15V SMBJ15A across the input
+  would be a cheap addition (a 12V adapter can sit at 12.6V, too close
+  for a 12V part).
+- **Head rail (LM317, 8V):** an LM317 in SOT-223 (U5) set to 8V feeds
+  both RJ45 ports:
 
   ```
-  12V ──┤IN  LM317M  OUT├──┬──────────── 8V to port fuses
+  12V ──┤IN  LM317   OUT├──┬──────────── 8V to the port TVS diodes
             ADJ           │
              │          [240Ω] R1
              ├────────────┘
@@ -398,19 +474,23 @@ The main unit runs from a 12V, 1A AC/DC adapter. Three regulators:
             GND
   ```
 
-  0.1µF ceramic at IN, 10µF at OUT. R1 = 240Ω draws the 5mA minimum load
+  100nF ceramic at IN (the input bank), 1µF tantalum (C3) at OUT: the
+  LM317 wants at least 1µF with some ESR there, so keep it tantalum
+  rather than a bare ceramic. R1 = 240Ω draws the 5mA minimum load
   the LM317 needs, so the rail stays regulated with no head plugged in.
   8V rather than 9V because the LM317 wants 2-2.5V of headroom and a 12V
   adapter can droop to 11.4V; the head's 5V LDO is happy with 8V (see
   Sensor Head: Power). Worst case dissipation is two AD8318 heads at a
-  12.6V input: 4.6V × 140mA ≈ 0.65W, about a 40°C rise in a free-standing
-  TO-220, so no heatsink. With two AD8307 heads it is under 0.1W. Being
+  12.6V input: 4.6V × 140mA ≈ 0.65W, about a 40°C rise for a SOT-223 on
+  a few cm² of copper pour, so no heatsink. With two AD8307 heads it is under 0.1W. Being
   linear, it puts no switching noise on the cable.
-- **Per-port fuse:** a resettable polyfuse (~200mA hold, e.g. 0ZCJ0020)
-  on each RJ45 V+ pin. A shorted cable or a failed head drops that port
-  only; the other channel and the main unit keep running. Hot-plugging a
-  head charges its 10µF input capacitor; the polyfuse handles that
-  transient without tripping.
+- **Per-port fuse: not fitted.** The schematic takes the 8V rail straight
+  to each RJ45 pin 1 with only the SMF12A TVS (D2, D3). A resettable
+  polyfuse (~200mA hold, e.g. 0ZCJ0020) per port would let a shorted
+  cable or failed head drop only its own channel; as drawn, a short
+  pulls the LM317 into current limit and both heads lose power until the
+  fault is removed. Hot-plug inrush into a head's 10µF would not trip
+  such a fuse. Add them in the next revision or accept the behaviour.
 - **5V regulator:** the Pico accepts 1.8-5.5V on VSYS. A Recom
   R-78C5.0-1.0 (1A buck module, SIP-3, 78xx pinout, 8-42V input) makes
   5V from 12V; a linear regulator would burn almost 3W here. Traco
@@ -418,20 +498,21 @@ The main unit runs from a 12V, 1A AC/DC adapter. Three regulators:
   the input and output capacitors from the R-78C datasheet right at the
   module pins; the 100µF at the jack does not replace them. The load is the EVB-Pico (RP2040 + W5500, ~200mA) plus
   the OLED path, ~0.4A worst case. Buck noise does not reach the heads:
-  they are fed from the LM317 and have their own LDOs. If the Pico may
-  be on USB while the 12V supply is on, feed VSYS through a Schottky as
-  the Pico datasheet recommends.
+  they are fed from the LM317 and have their own LDOs. 10µF tantalum at
+  the module input and output (C11, C13). VSYS is fed through an SS14
+  (D1), as the Pico datasheet recommends, so a USB cable can be plugged
+  in while the 12V supply is on.
 - **3.3V budget:** the controller is a W5500-EVB-Pico. Its onboard
   regulator powers the RP2040 and the W5500 (~130mA active) and the Pico
   documentation allows about 300mA for external loads on the 3V3 pin, so
   with the W5500 already on it there is no room for a 256x64 OLED module.
   The panel voltage (VCC, 12-15V) is made by a boost converter on the
   display module, and at full brightness with a mostly-lit screen the
-  module can pull 100-200mA from its 3.3V input. Give the display its own
-  SOT-223 LDO (AP7361C-33 or AMS1117-3.3, ~0.35W, with 10µF on both
-  sides) from the 5V rail, and leave the Pico's 3V3 pin for the pull-ups
-  only. If the chosen module has a 5V input option (onboard regulator),
-  feed it 5V instead and the LDO goes away.
+  module can pull 100-200mA from its 3.3V input. The display therefore
+  has its own AP7361C-33 (U7, SOT-223, ~0.35W, stable with any capacitor
+  type) from the 5V rail, with 10µF tantalum on the input (C13) and
+  output (C12) plus 47µF/10V tantalum bulk (C1) on the output. The
+  Pico's 3V3 pin carries only the pull-ups and the 74HC14.
 
 ## I2C ESD Protection
 
@@ -550,8 +631,32 @@ GND              ───────────► GND
   with the boost converter on board (e.g. the ER-OLEDM032 series, or the
   Newhaven NHD-3.12-25664 with its carrier board) so only 3.3V and logic
   come from the main board. Budget 100-200mA at full brightness.
-- **Header:** 1x7 or 1x8 pin header (or the module's FPC breakout) on
-  the main board; the module mounts behind the front panel.
+- **Header:** 2x8 box header J1 (2.54 mm, IDC) on the main board,
+  wired pin-for-pin over a 16-way ribbon to the module's 2x8 pin strip
+  (both numbered odd/even across the rows, so conductor N is pin N at
+  both ends). Angled Würth WR-BHD 61201621721 on the board, 61201623021
+  sockets on the cable; the schematic footprint is still the vertical
+  IDC header and should become the horizontal one. The module's pin
+  order follows the ER-OLEDM032 family and was checked with a meter
+  (pin 1 GND, pin 2 VDD, pin 3 open, pins 4-16 controller inputs, no
+  pull-ups on the module):
+
+  | J1 pin | Signal |
+  |--------|--------|
+  | 1 | GND |
+  | 2 | +3.3V from the display LDO |
+  | 3 | NC |
+  | 4 | SCLK, GP10 |
+  | 5 | SDIN, GP11 |
+  | 6 | D2, left open (unused in 4-wire SPI) |
+  | 7-13 | GND (D3-D7, E/RD#, R/W# tied low) |
+  | 14 | D/C#, GP14 |
+  | 15 | RES#, GP15, 10kΩ pull-up to 3V3 (R9) |
+  | 16 | CS#, GP13, 10kΩ pull-up to 3V3 (R12) |
+
+  The pull-ups hold the panel in reset and deselected while the Pico
+  boots. Mark pin 1 on the module and glue the socket once the mapping
+  has been verified; the pin strip has no shroud or key.
 
 ## Rotary Encoder and Debouncing
 
@@ -560,6 +665,12 @@ and external attenuator. All three contacts are debounced in hardware: an RC fil
 followed by a 74HC14 Schmitt inverter, so the Pico only ever sees one
 clean edge per contact change and the firmware uses plain edge
 interrupts with no debounce timers.
+
+> **Schematic note:** the main board schematic currently places a
+> PEC12R-2217F-S0024 (U4, the part available in the personal library).
+> The hookup below is identical for both parts (A/B/C quadrature, D/E
+> switch); the PEC16 is specified for its panel bushing. Resolve before
+> layout.
 
 **Part: Bourns PEC16-2215F-S0024.** 16 mm encoder, 24 detents, 24
 pulses per revolution, push switch, 15 mm insulated flatted shaft (6 mm
@@ -594,27 +705,33 @@ joints.
                           │                │
                          GND              GND
 
-(identical for B → GP7 and the switch → GP8)
+(identical for B → GP7; the switch → GP8 uses 470nF instead of 10nF)
 ```
 
 | Signal | Encoder pin | Filter | 74HC14 | Pico |
 |--------|-------------|--------|--------|------|
 | A | A | 10kΩ + 10kΩ + 10nF | 1A → 1Y | GP6 |
 | B | B | 10kΩ + 10kΩ + 10nF | 2A → 2Y | GP7 |
-| Switch | D | 10kΩ + 10kΩ + 10nF | 3A → 3Y | GP8 |
+| Switch | D | 10kΩ + 10kΩ + 470nF | 3A → 3Y | GP8 |
 | Common | C, E | GND | | |
 
-- **RC values:** R1 pulls the contact up, R2 and C form the filter, time
-  constant 100µs. This is the network Bourns recommends for its PEC11R
-  and PEC12R encoders: it swallows contact bounce of a few hundred
-  microseconds and still passes the fastest realistic spin (a 24-detent
-  encoder turned at 5 turns per second gives 2ms per detent, 500µs per
-  quadrature transition). The PEC16 datasheet allows up to 5ms of
-  bounce at 15 RPM, which this filter does not fully swallow. On A and
-  B that is harmless: a bounce on one channel only toggles between two
-  adjacent quadrature states, so the decoder counts +1, -1 and nets
-  zero. If the switch ever registers double presses, raise its
-  capacitor to 100nF (1ms).
+- **RC values, A and B (10nF):** R1 pulls the contact up, R2 and C form
+  the filter. The time constant is 100µs when the contact closes
+  (discharge through R2 alone) and 200µs when it opens (charge through
+  R1 + R2). This is the network Bourns recommends for its PEC encoders.
+  It does not swallow the datasheet's worst-case 5ms of bounce and does
+  not need to: a bounce on one channel only toggles between two adjacent
+  quadrature states, so the decoder counts +1, -1 and nets zero. What
+  the filter must not do is eat real edges. Even at an unrealistic 5
+  turns per second a 24-detent encoder gives 8.3ms per detent, so edges
+  on one channel are at least 4ms apart, and the 74HC14 threshold is
+  reached in about 0.8 rising time constants, 160µs. 47nF would still be
+  fine; 100nF starts to skew the A/B timing.
+- **RC value, switch (470nF, C7):** 4.7ms / 9.4ms time constants. The
+  press handler counts every rising edge with no software lockout, so
+  this filter must swallow the full 5ms bounce. A press registers about
+  5ms after contact, invisible to the user, and no finger repeats faster
+  than 100ms.
 - **74HC14:** runs from 3V3 with a 100nF decoupling capacitor. Its
   hysteresis (~0.9V at 3.3V) turns the slow RC ramp into a single sharp
   transition, so there are no double interrupts. Tie the three unused
@@ -676,7 +793,7 @@ connector; do not daisy-chain them through a trace.
 
 | Signals | RJ45 Pins | TVS Package | Notes |
 |---------|-----------|-------------|-------|
-| V+ (8V) | 1 | 1× SMF12A (12V) | After the polyfuse |
+| V+ (8V) | 1 | 1× SMF12A (12V) | D2, D3; no polyfuse fitted |
 | I2C SDA + SCL | 3, 4 | 1× ESDAVLC6-2BLY | ~0.45pF OK for 400kHz |
 | Presence Detect | 8 | 1× ESDAVLC6-2BLY | One line unused |
 
@@ -689,30 +806,37 @@ detector datasheet.
 
 ## Current Schematic Status
 
-Both KiCad projects were started before the ADC moved into the head and
-have not yet been updated:
+Both schematics now follow the design above. Remaining differences and
+open items:
 
-- `main_board`: still contains two ADS1115s (U1, U2) with their RC
-  filters, analog TVS diodes and ALERT pull-ups, plus the TCA9548A (U4)
-  and the two I2C OLED headers (J3, J4). These all go away. RJ45 wiring
-  changes: pin 1 becomes V+ (8V via polyfuse + TVS), SDA/SCL on pins
-  3/4 go directly to Pico GP0/GP1 (RJ45 #1) and GP2/GP3 (RJ45 #2) with
-  10kΩ pull-ups, pins 5, 6 and 7 become GND, presence detect on pin 8
-  goes to GP4/GP5. Presence detect pull-downs R10/R11 become pull-ups to
-  3V3. New: a header for the SSD1322 module on SPI1 (GP10, GP11,
-  GP13-GP15), the PEC16-2215F-S0024 encoder at the board front edge with its RC
-  filters and 74HC14 (GP6-GP8),
-  and a SOT-223 3.3V LDO for the display from the 5V rail. The 12V
-  input (jack, 100µF, 15V TVS), the LM317M 8V head rail, the 5V buck
-  module (R-78C5.0-1.0) and the Pico are not drawn yet.
-- `sensor_heads/AD8307`: needs the ADS1115, the MCP9808, the 100nF
-  output filter capacitor and the ALERT pull-up added; the detector
-  output goes to AIN0 instead of RJ45 pin 4. C3/C4 (input coupling)
-  stay 10nF but should be C0G. RJ45 wiring changes: pin 1 becomes V+ into
-  a 3.3V LDO (plus 10µF and TVS), SCL moves from pin 6 to pin 4, pins 5,
-  6 and 7 become GND (R6, the AGND link, goes away), pin 8 goes to GND
-  instead of 3V3. The +3V3 and +5V power symbols now mean the head's own
-  LDO outputs. The 3 dB pi pad (17.4Ω series, 2× 294Ω
-  shunt) goes between J1 and the 52.3Ω termination R4. EEPROM A1/A2 must
-  be tied to GND. The TVS symbol is still the superseded PESD5V0L2BT-Q
-  with a SOT-23-5 footprint and should become ESDAVLC6-2BLY (SOT-23-6L).
+- `main_board` (schematic drawn; PCB layout not started):
+  - Power as drawn: screw terminal J5 → SS14 (D5) → 12V bank (2× 100µF,
+    1µF, 100nF) → LM317 SOT-223 (U5, 240Ω/1.3kΩ, 1µF tantalum out) → 8V
+    with SMF12A (D2, D3) at each RJ45 pin 1. R-78C5.0-1.0 (U2, 10µF in
+    and out) → 5V → SS14 (D1) → Pico VSYS; AP7361C-33 (U7, 10µF + 47µF
+    out) → display 3.3V on J1 pin 2.
+  - Not drawn: the per-port polyfuses and the 15V input TVS discussed
+    above. Add them or formally drop them.
+  - Encoder is a PEC12R-2217F-S0024 (U4), not the PEC16-2215F-S0024 the
+    encoder section specifies. Same wiring; decide on the part.
+  - OLED header J1 uses the vertical IDC footprint; change to the
+    horizontal footprint for the angled Würth 61201621721.
+  - Pico pin assignment, I2C pull-ups (10kΩ), presence pull-ups (10kΩ),
+    ESD (ESDAVLC6-2BLY D4/D7 on I2C, D8/D9 on presence with one line
+    unused) and the 74HC14 debounce (10nF/10nF/470nF) match the sections
+    above.
+- `sensor_heads/AD8307` (schematic complete; 4-layer layout in progress):
+  - Schematic matches the sections above: LP2985-3.3 (U4) with 1µF in,
+    10nF bypass and 10µF/25V tantalum out; 10µF/25V tantalum (C7) and
+    SMF12A (D2) on V+; AD8307 with the 3 dB pad (17.6Ω/2× 294Ω), 52.3Ω
+    termination and 10nF coupling; ADS1115 (ADDR and AIN1-AIN3 → GND,
+    10kΩ on ALERT/RDY, 100nF on AIN0); MCP9808 MSOP (A0-A2 → GND);
+    AT24CS04-SSHM (A1, A2, WP → GND); 4.7kΩ pull-ups; ESDAVLC6-2BLY (D1)
+    on SDA/SCL.
+  - C9 (the 10nF LP2985 bypass) carries a resistor footprint (R_0805);
+    change it to a capacitor footprint.
+  - Layout: 57.6 × 39.0 mm outline with the RJ45 notch, SMA and RJ45 on
+    the board centreline, RF tracks at 0.35 mm, zones filled. Open: 7
+    unrouted connections, 9 starved thermals, a U2/C5 courtyard overlap,
+    and the expected copper-to-edge DRC items on the J1 and J2 pads
+    (exclude them).

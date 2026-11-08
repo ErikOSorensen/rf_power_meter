@@ -174,7 +174,7 @@ keeps SDA-to-SCL crosstalk low and gives each signal a tight return path.
 
 | Pin | Pair | Wire Color | Function | Notes |
 |-----|------|------------|----------|-------|
-| 1 | Orange | Orange/White | V+ (8V) | Head supply from the main unit's LM317, fused per port |
+| 1 | Orange | Orange/White | V+ (8V) | Head supply from the main unit's LM317, 12V TVS per port |
 | 2 | Orange | Orange | GND | Power return |
 | 3 | Green | Green/White | I2C SDA | Pico I2C0 (head 1) or I2C1 (head 2) |
 | 6 | Green | Green | GND | Return for SDA |
@@ -221,7 +221,7 @@ I2C controllers runs straight to one RJ45 jack:
 |--------|---------|----------|
 | ADS1115 | 0x48 | ADC for detector output (ADDR → GND) |
 | MCP9808 | 0x18 | Temperature next to the detector (A0-A2 → GND) |
-| AT24C02 / AT24CS04 | 0x50 | Sensor type, serial number, calibration |
+| AT24CS04 | 0x50 (0x51 upper half, 0x58 factory serial) | Sensor type, serial number, calibration |
 
 Because the heads never share a bus, there is no multiplexer and no
 channel-select transaction. A fault on one cable (a head yanked
@@ -238,7 +238,7 @@ channel and the display are unaffected.
    128 SPS on separate buses. The Pico just reads the latest conversion
    from each head, so reads do not block and the two channels are
    sampled within a millisecond of each other.
-4. **Spare inputs**: AIN2/AIN3 are free for future heads with two
+4. **Spare inputs**: AIN2/AIN3 (grounded on the AD8307 head) are available for future heads with two
    detectors (e.g. a directional coupler head reporting forward and
    reflected power).
 
@@ -312,21 +312,21 @@ delivers 8V; the head makes a 3.3V rail for the digital parts and, for
                  ││                                    │ VCC ◄───────┼── 3V3 or 5V   │
                  │└─ GND                               └─────────────┘   rail        │
                  │                                                                  │
-                 │   ADS1115: ADDR → GND, ALERT/RDY → 10kΩ pull-up, AIN2/AIN3 spare  │
+                 │   ADS1115: ADDR → GND, ALERT/RDY → 10kΩ pull-up, AIN2/AIN3 → GND  │
                  └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Component List (per sensor head):**
 - RF detector IC (AD8307, AD8317, AD8318, LTC5582, etc.)
 - ADS1115 16-bit ADC (TSSOP-10), ADDR → GND
-- MCP9808 temperature sensor (MSOP-8 or DFN-8), A0-A2 → GND, placed as close to the detector as layout allows
-- AT24C02 / AT24CS04 EEPROM (I2C address 0x50; A1/A2 → GND)
-- 3.3V low-noise LDO (e.g. LP2985-33 or MIC5205-3.3, SOT-23-5, 16V input) for ADC, temperature sensor, EEPROM and 3.3V detectors
+- MCP9808 temperature sensor (MSOP-8), A0-A2 → GND, placed as close to the detector as layout allows
+- AT24CS04-SSHM EEPROM, SOIC-8 (I2C address 0x50, factory serial number at 0x58; A1, A2 and WP → GND)
+- 3.3V low-noise LDO LP2985-33 (SOT-23-5, 16V input; MIC5205-3.3 is a drop-in alternative) for ADC, temperature sensor, EEPROM and 3.3V detectors
 - 5V LDO (e.g. AP7361C-50 or LD1117S50, SOT-223) on 5V-detector heads only; the 3.3V LDO then cascades from the 5V rail
-- Power input: 10µF ceramic + 12V TVS (SMF12A or similar) on V+, 1µF + 100nF on each LDO output
+- Power input: 10µF/25V tantalum + 12V TVS (SMF12A) on V+; LP2985 with 1µF at VIN, 10nF on BYPASS and 10µF tantalum at VOUT
 - RJ45 jack: Würth 615108150221R mid-mount (shielded, tab down, no magnetics, no LEDs; project library `rf_power_meter:RJ45_WE-615108150221R`), sits in a board-edge cutout to fit the enclosure height; pin 8 tied to GND for presence detect
 - SMA connector for RF input: Amphenol RF 132289, edge mount (project library `rf_power_meter:SMA_132289`)
-- 3 dB pi attenuator between SMA and detector: 17.4Ω series, 2× 294Ω shunt, thin-film 1% (see `hardware/README.md`)
+- 3 dB pi attenuator between SMA and detector: 17.6Ω series, 2× 294Ω shunt, thin-film 1% (see `hardware/README.md`)
 - Detector output filter: 100nF from OUT to ground, straight into ADS1115 AIN0 (the AD8307 output is 12.5kΩ, no series resistor needed)
 - Detector input network: 52.3Ω termination, 2× 10nF C0G coupling capacitors on INP and INM (see `hardware/README.md`)
 - Decoupling capacitors (100nF on each IC supply pin)
@@ -352,14 +352,14 @@ slope that is 0.005 dB per count.
 ### Main Unit Schematic
 
 The main unit takes 12V DC from a 1A adapter. Three regulators make the
-rails: an LM317M set to 8V for the two RJ45 ports (fused per port), a 5V
+rails: an LM317 (SOT-223) set to 8V for the two RJ45 ports (12V TVS per port), a 5V
 buck module for the W5500-EVB-Pico, whose own 3.3V regulator powers the
 RP2040 and the W5500, and a small 3.3V LDO for the OLED module. With the
 analog chain moved to the heads, the main unit is purely digital.
 
 ```
-  12V DC ───┬──► LM317M (8V) ─────────────────────────────────► To RJ45 Pin 1 (V+)
-            │                                                     via polyfuse + TVS per port
+  12V DC ───┬──► LM317 (8V) ──────────────────────────────────► To RJ45 Pin 1 (V+)
+            │                                                     via 12V TVS per port
             ├──► 5V buck module ───────┬──► Pico VSYS (RP2040 + W5500)
             │                          └──► 3.3V LDO ──► OLED module
             │
@@ -404,7 +404,7 @@ analog chain moved to the heads, the main unit is purely digital.
                 ┌─────────────────────────────────────┐
                 │  Sensor 1          Sensor 2         │
                 │  ┌───────┐         ┌───────┐        │
-   V+ (fused) ──┼─►│1: V+  │         │1: V+  │◄───────┼─── V+ (fused)
+   V+ (8V) ─────┼─►│1: V+  │         │1: V+  │◄───────┼─── V+ (8V)
    GND ─────────┼─►│2: GND │         │2: GND │◄───────┼─── GND
    GP0 (SDA0) ──┼─►│3: SDA │         │3: SDA │◄───────┼─── GP2 (SDA1)
    GP1 (SCL0) ──┼─►│4: SCL │         │4: SCL │◄───────┼─── GP3 (SCL1)
@@ -421,6 +421,8 @@ analog chain moved to the heads, the main unit is purely digital.
 - 4-wire SPI at up to 10 MHz on the Pico's SPI1; the controller is
   write-only, so MISO is not connected
 - 3.3V logic (VDDIO 1.65-3.5V), so no level shifting
+- Connected through a 16-way IDC ribbon from the 2x8 header J1; pinout
+  in `hardware/README.md`
 - A full frame is 8 KB; at 10 MHz a refresh takes about 7 ms. The
   firmware redraws at 5 Hz
 - Both channels share the panel: channel 1 on the top row, channel 2
@@ -428,17 +430,20 @@ analog chain moved to the heads, the main unit is purely digital.
   screen, which stays up for 3 s after DHCP succeeds
 
 **Power Supply Requirements:**
-- 12V DC input from a 1A AC/DC adapter (2.1mm jack, centre positive)
-- An LM317M (TO-220, 500mA) set to 8V with R1 = 240Ω, R2 = 1.3kΩ makes
-  the head rail. It dissipates under 0.7W with two AD8318 heads and
-  needs no heatsink
-- The 8V rail goes to each RJ45 pin 1 through a resettable fuse (~200mA
-  hold) and a 12V TVS, so a shorted cable or head only drops that port
+- 12V DC input from a 1A AC/DC adapter on a 2-pole screw terminal,
+  reverse-polarity protected by a series SS14 Schottky
+- An LM317 (SOT-223) set to 8V with R1 = 240Ω, R2 = 1.3kΩ makes the
+  head rail. It dissipates under 0.7W with two AD8318 heads and needs
+  only a copper pour
+- The 8V rail goes to each RJ45 pin 1 with a 12V TVS. The per-port
+  resettable fuses that would isolate a shorted cable are not fitted in
+  the current schematic
 - A 1A 5V buck module (Recom R-78C5.0-1.0, 78xx pinout) feeds Pico VSYS
+  through an SS14 Schottky, so USB can be connected at the same time
 - On the W5500-EVB-Pico the W5500 shares the module's 3.3V regulator
   with the RP2040, so it is covered by the 5V feed to VSYS
-- A separate 3.3V LDO (SOT-223, e.g. AP7361C-33 or AMS1117-3.3) from the
-  5V rail supplies the OLED module. A 256x64 OLED module with its onboard
+- A separate AP7361C-33 LDO (SOT-223) from the 5V rail supplies the OLED
+  module. A 256x64 OLED module with its onboard
   panel-voltage boost can draw 100-200 mA at full brightness, and the
   Pico's 3V3 pin is already carrying the W5500. Skip the LDO if the
   module accepts 5V on its own regulator input
