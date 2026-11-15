@@ -16,6 +16,7 @@ standard KiCad libraries, or that we want pinned to a specific part.
 | `SMA_132289` | `SMA_Amphenol_132289_EdgeMount` | `SMA_Amphenol_132289_EdgeMount.step` | Amphenol RF 132289, SMA jack, 50Ω, PCB edge mount. RF input on every head. |
 | `RJ45_RJHSE-5380` | `RJ45_Amphenol_RJHSE5380` | `RJ45_Amphenol_RJHSE5380.step` | Amphenol RJHSE-5380, RJ45 8P8C jack, shielded, through hole, no magnetics, no LEDs. Main-unit ports. |
 | `RJ45_WE-615108150221R` | `RJ45_Wuerth_615108150221R_MidMount` | `RJ45_Wuerth_615108150221R_MidMount.step` | Würth WR-MJ 615108150221R, RJ45 8P8C, mid-mount in a board-edge cutout, shielded, tab down, THR, no magnetics, no LEDs. Sensor heads. Footprint drawn from the datasheet (not vendor-supplied); verify against a sample before ordering boards. |
+| (schematic uses `lb3th:W5500-EVB-PICO`) | `W5500-EVB-Pico_Socketed` | `W5500-EVB-Pico_Socketed.step` | WIZnet W5500-EVB-Pico on two 1x20 2.54 mm pin sockets. Main-unit controller. |
 
 **SMA footprint note:** the board edge belongs at x = +2.54 mm in the
 footprint's frame (the F.Fab line where the slotted body ends and the
@@ -38,6 +39,20 @@ shows the body 7.45 mm above the board top, 1.4 mm below the underside and
 the front face 2.3 mm beyond the board edge, which differs from the 10.65 /
 1.65 / 1.13 mm quoted in the enclosure section of `../README.md`; verify
 against the datasheet drawing before relying on either.
+
+**W5500-EVB-Pico note:** the footprint origin is pin 1 (GP0, USB end)
+and the pads are the two 1x20 sockets, 17.78 mm apart. The STEP is
+WIZnet's board model composed with KiCad's `PinHeader_1x20_P2.54mm_Vertical`
+(soldered under the Pico) and `PinSocket_1x20_P2.54mm_Vertical` (on this
+board), re-origined to pin 1 at the socket seating plane, so the footprint
+places it with no offset or rotation. The Pico PCB outline (21 x 75 mm) is
+on F.Fab and F.SilkS; the RJ45 jack projects 4.7 mm beyond the Pico PCB end
+(Dwgs.User) and is meant to pass the main board edge and the enclosure
+wall. The courtyard covers the sockets only: the Pico's underside is
+11.0 mm above the board and the jack's lowest point 8.0 mm, so parts may
+sit underneath. The SWD pins (41-43 in the symbol) are a header on top of
+the module and have no pads. WIZnet's model has a 0.41 mm thick PCB, so
+real heights above the board may differ by about a millimetre.
 
 **Mid-mount RJ45 note:** the shield pads sit flush against the board
 cutout, exactly as the Würth drawing specifies, so KiCad's default

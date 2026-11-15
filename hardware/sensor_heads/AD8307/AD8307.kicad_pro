@@ -581,7 +581,7 @@
       "plot": "",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "AD8307.step",
       "svg": "",
       "vrml": ""
     },
