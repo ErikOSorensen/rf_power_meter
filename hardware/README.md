@@ -308,15 +308,17 @@ together). From Hammond's drawing:
 
 The SMA flange hangs ~2.0 mm below the board underside, so the lowest
 slot (2.0 mm above the floor) leaves it touching the floor. Use the
-**second slot from the bottom**: board underside ≈ 4.05 mm above the
-floor, board top ≈ 5.65 mm.
+**second slot from the bottom**: board underside ≈ 5.3 mm above the
+floor, board top ≈ 6.9 mm (measured on Hammond's STEP model; the slot
+spans 5.28 to 7.08 mm above the floor). The top wall of this slot is the
+underside of the end-plate screw boss, see the keep-outs below.
 
 | Item | Need | Available in slot 2 |
 |------|------|---------------------|
-| Above board top: Würth RJ45 | 10.65 mm | 14.35 mm nominal (13.9 worst case) |
-| Above board top: SMA flange | 4.3 mm | 14.35 mm |
-| Below board underside: Würth RJ45 | 1.65 mm | 4.05 mm |
-| Below board underside: SMA flange | 2.0 mm | 4.05 mm |
+| Above board top: Würth RJ45 | 10.65 mm | 13.1 mm nominal (12.7 worst case) |
+| Above board top: SMA flange | 4.3 mm | 13.1 mm |
+| Below board underside: Würth RJ45 | 1.65 mm | 5.3 mm |
+| Below board underside: SMA flange | 2.0 mm | 5.3 mm |
 
 The Amphenol RJHSE-5380 at 15.5 mm would not fit in this slot, which is
 why the heads use the mid-mount Würth part.
@@ -337,8 +339,8 @@ edges and those faces:
 
 ```
  end plate (1.63)            extrusion 60.0 ±0.5                 end plate
- ┌──┐ 1.65 ┌──────────────────────────────────────────┐ 0.75 ┌──┐
- │  │flange│  PCB 57.6 mm                              │ gap  │  │
+ ┌──┐ 1.65 ┌──────────────────────────────────────────┐ 0.25 ┌──┐
+ │  │flange│  PCB 58.1 mm                              │ gap  │  │
  │  ├──────┤ ◄─ SMA end                      RJ45 end ─►├──┐   │  │
  │  │      │                                   face ──►│  │   │  │
  └──┘      └──────────────────────────────────────────┘──┘   └──┘
@@ -348,13 +350,13 @@ edges and those faces:
 |------|-------|
 | Inside face to inside face | 60.0 ± 0.5 mm |
 | SMA flange | 1.65 mm |
-| PCB length | **57.6 mm** (= 60.0 − 1.65 − 0.5 tolerance − 0.25 clearance) |
-| Nominal gap, RJ45-end board edge to extrusion end | 0.75 mm |
-| RJ45 face position, nominal | 0.38 mm proud of the extrusion end, 1.25 mm inside the plate's outer surface |
-| RJ45 face, extrusion at 59.5 / 60.5 | 0.88 proud / 0.12 inside the extrusion end; always within the plate cutout |
+| PCB length | **58.1 mm** (= 60.0 − 1.65 − 0.25 clearance; no allowance for the extrusion tolerance) |
+| Nominal gap, RJ45-end board edge to extrusion end | 0.25 mm |
+| RJ45 face position, nominal | 0.88 mm proud of the extrusion end, 0.75 mm inside the plate's outer surface |
+| Extrusion at 59.5 / 60.5 | board + flange is 0.25 mm too long (file the RJ45-end edge) / 0.75 mm gap, face 0.38 proud |
 
 Nothing locates the board lengthwise except the SMA flange against its
-plate, so the board can float by the 0.25-0.75 mm slack toward the RJ45
+plate, so the board can float by the 0.25 mm nominal slack toward the RJ45
 end. That only moves the SMA barrel slightly in its clearance hole and
 is harmless. If you want it fixed, a dab of adhesive on the flange or a
 small stop glued to the floor at the RJ45 end does it.
@@ -388,7 +390,7 @@ From the enclosure budget above:
 
 | Item | Value | Why |
 |------|-------|-----|
-| Length | 57.6 mm | 60.0 mm between end plate inner faces, minus the 1.65 mm SMA flange, 0.5 mm extrusion tolerance and 0.25 mm clearance |
+| Length | 58.1 mm | 60.0 mm between end plate inner faces, minus the 1.65 mm SMA flange and 0.25 mm clearance |
 | Width | 39.0 mm | Slot to slot is 39.5 mm; Hammond designs the extrusion for a 39 mm board, 0.25 mm per side |
 | Thickness | 1.6 mm | Slots are 1.8 mm wide. The Amphenol edge-mount SMA and the Würth mid-mount RJ45 are both specified for 1.6 mm boards |
 | Slot | second from the bottom | See "Which PCB slot" |
@@ -399,12 +401,18 @@ Keep-outs:
 - **Long edges:** ~1.5 mm of each edge sits inside the slot. No
   components there, and no copper either: the anodising is thin at the
   slot and a scratched edge could short to the box.
+- **Screw bosses along the long edges:** the end-plate screw channel
+  (a Ø5.84 mm boss centred 1.7 mm inboard of each board edge, running
+  the full length) starts 0.2 mm above the board top in slot 2. Keep
+  every top-side part at least **4.7 mm** from the long edges; parts
+  under 1.25 mm tall may come to 4.3 mm and 0603/0805 resistors to
+  3.6 mm. Checked 2026-11-15: the closest part (C8) has 1.8 mm to spare.
 - **SMA end:** the board edge is the footprint's F.Fab line, pads
   2.54 mm inboard. Nothing may extend past the edge; the flange sits
   between edge and plate.
 - **RJ45 end:** only the Würth jack's face (1.13 mm) protrudes past the
   edge.
-- **Height:** top side up to ~14 mm (only the RJ45 approaches this),
+- **Height:** top side up to ~12.5 mm (only the RJ45 approaches this),
   underside up to ~3 mm (SMD passives are fine, nothing tall).
 
 ### Four layers
@@ -835,7 +843,7 @@ open items:
     and AIN1-AIN3 → GND, 10kΩ on ALERT/RDY, 100nF on AIN0); MCP9808 MSOP
     (A0-A2 → GND); AT24CS04-SSHM (A1, A2, WP → GND); 4.7kΩ pull-ups;
     ESDAVLC6-2BLY (D1) on SDA/SCL.
-  - Layout: 57.6 × 39.0 mm outline with the RJ45 notch, SMA and RJ45 on
+  - Layout: 58.1 × 39.0 mm outline with the RJ45 notch, SMA and RJ45 on
     the board centreline, GND zone on F.Cu, In1.Cu and B.Cu, +3V3 zone
     on In2.Cu, rule area voiding In1.Cu under the SMA pin pad. Net
     classes: RF (0.35 mm, no vias, 0.6 mm pour clearance) and power
